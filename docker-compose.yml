@@ -1,0 +1,17 @@
+services:
+  codex-egress-proxy:
+    build:
+      context: ./proxy
+    container_name: codex-egress-proxy
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./proxy/filter.list:/etc/tinyproxy/filter.list:ro
+    networks:
+      - codex-shared
+
+networks:
+  codex-shared:
+    name: codex-shared
+    driver: bridge

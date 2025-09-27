@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""Placeholder codex CLI for local testing.
+
+This stub mirrors the subset of the real Codex CLI needed by the orchestrator.
+It primarily implements the `codex exec` workflow while retaining the legacy
+`codex run` entrypoint for backwards compatibility.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import json
+import os
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Iterable
+
+STUB_VERSION = "codex-stub/0.3"
+DEFAULT_OUTPUT_FILENAME = "CODEX_SUMMARY.md"
+CHANGELOG_FILENAME = "CODEX_CHANGE.log"
+
+
+def _parse_run_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="codex run", description="Execute the codex run workflow")
+    parser.add_argument("--project", default="/work", help="Path to the project workspace")
+    parser.add_argument("--out", default=None, help="Directory to emit outputs")
+    parser.add_argument("--auto", action="store_true", help="Ignored automation flag for the stub")
+    parser.add_argument("--yolo", action="store_true", help="Ignored approval bypass flag for the stub")
+    return parser.parse_args(argv)
+
+
+def _parse_exec_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="codex exec", description="Execute the codex exec workflow", allow_abbrev=False)
+    parser.add_argument("--cd", dest="cd", default=None, help="Workspace directory")
+    parser.add_argument("--skip-git-repo-check", action="store_true", help="Allow execution outside git repos")
+    parser.add_argument("--yolo", dest="yolo", action="store_true", help="Alias for bypassing approvals")
+    parser.add_argument(
+        "--dangerously-bypass-approvals-and-sandbox",
+        dest="yolo",
+        action="store_true",
+        help="Alias for bypassing approvals",
+    )
+    parser.add_argument("--json", action="store_true", help="Ignored JSON streaming flag")
+    parser.add_argument("--include-plan-tool", action="store_true", help="Ignored plan tool flag")
+    parser.add_argument("--full-auto", action="store_true", help="Ignored convenience flag")
+    parser.add_argument("-a", "--ask-for-approval", dest="ask_for_approval", help="Ignored approval policy override")
+    parser.add_argument("-s", "--sandbox", dest="sandbox", help="Ignored sandbox override")
+    parser.add_argument("-p", "--profile", dest="profile", help="Ignored profile selection")
+    parser.add_argument("-m", "--model", dest="model", help="Ignored model override")
+    parser.add_argument("-c", "--config", dest="config", action="append", help="Ignored config overrides")
+    parser.add_argument("--oss", action="store_true", help="Ignored OSS shortcut")
+    parser.add_argument("--output-last-message", dest="output_last_message", help="Ignored output selector")
+    parser.add_argument("--output-schema", dest="output_schema", help="Ignored schema option")
+    parser.add_argument("--color", dest="color", help="Ignored color option")
+    parser.add_argument("-i", "--image", dest="images", action="append", help="Ignored image attachment")
+    args, remainder = parser.parse_known_args(argv)
+
+    prompt_arg: str | None = None
+    command_args: list[str] = []
+    if remainder:
+        if remainder[0] == "--":
+            command_args = remainder[1:]
+        elif remainder[0].startswith("-"):
+            command_args = remainder
+        else:
+            prompt_arg = remainder[0]
+            command_args = remainder[1:]
+
+    args.prompt_argument = prompt_arg
+    args.command_arguments = command_args
+    return args
+
+
+def _ensure_within_workspace(output_dir: Path, workspace: Path) -> None:
+    try:
+        output_dir.resolve().relative_to(workspace.resolve())
+    except ValueError as exc:
+        raise SystemExit(f"Output path must remain within workspace: {output_dir}") from exc
+
+
+def _run_placeholder(workspace: Path, output_dir: Path) -> int:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    change_log = output_dir / CHANGELOG_FILENAME
+    timestamp = datetime.now(timezone.utc).isoformat()
+    prompt = os.environ.get("CODEX_PROMPT", "<no prompt provided>")
+
+    with change_log.open("a", encoding="utf-8") as handle:
+        handle.write(f"{timestamp}: codex placeholder executed\n")
+        handle.write(f"prompt: {prompt}\n\n")
+
+    print(f"codex placeholder wrote change log at {change_log}")
+    summary_path = output_dir / DEFAULT_OUTPUT_FILENAME
+    summary_path.write_text(
+        "\n".join(
+            [
+                "# Codex Task Summary",
+                "",
+                f"- timestamp: {timestamp}",
+                f"- prompt: {prompt}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return 0
+
+
+def _write_metadata(workspace: Path, flags: Iterable[str]) -> None:
+    metadata_file = os.environ.get("CODEX_METADATA_FILE", "CODEX_METADATA.json")
+    metadata_path = Path(metadata_file)
+    if not metadata_path.is_absolute():
+        metadata_path = workspace / metadata_path
+    metadata_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "agent_version": STUB_VERSION,
+        "mode": "stub",
+        "flags": list(flags),
+    }
+    metadata_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def _prepare_session_bundle() -> None:
+    bundle_b64 = os.environ.get("CODEX_SESSION_BUNDLE_B64")
+    if not bundle_b64:
+        return
+    try:
+        decoded = base64.b64decode(bundle_b64).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError) as exc:
+        print(f"codex stub failed to decode session bundle: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+    try:
+        json.loads(decoded)
+    except json.JSONDecodeError as exc:  # noqa: BLE001 - surface validation failure
+        print(f"codex stub received invalid session JSON: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+
+    target_path = Path.home() / ".codex" / "auth.json"
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(decoded, encoding="utf-8")
+    os.chmod(target_path, 0o600)
+    os.environ.setdefault("CODEX_SESSION_BUNDLE_PATH", str(target_path))
+    os.environ.pop("CODEX_SESSION_BUNDLE_B64", None)
+
+
+def _collect_flags(*extras: str | None) -> list[str]:
+    flags = [flag for flag in os.environ.get("CODEX_INVOCATION_FLAGS", "").split() if flag]
+    for flag in extras:
+        if not flag:
+            continue
+        if flag not in flags:
+            flags.append(flag)
+    if not flags:
+        flags.append("--stub")
+    return flags
+
+
+def _resolve_prompt(prompt_arg: str | None) -> str:
+    if prompt_arg == "-":
+        return sys.stdin.read()
+    if prompt_arg is not None:
+        return prompt_arg
+    return os.environ.get("CODEX_PROMPT", "")
+
+
+def main(argv: list[str] | None = None) -> int:
+    _prepare_session_bundle()
+    argv = argv or sys.argv[1:]
+    if not argv:
+        print(STUB_VERSION)
+        return 0
+    if argv[0] in {"--version", "-V"}:
+        print(STUB_VERSION)
+        return 0
+
+    command = argv[0]
+
+    if command == "run":
+        args = _parse_run_args(argv[1:])
+        workspace = Path(args.project).expanduser().resolve()
+        if not workspace.exists():
+            raise SystemExit(f"Workspace does not exist: {workspace}")
+        output_dir = Path(args.out).expanduser() if args.out else workspace
+        output_dir = output_dir.resolve()
+        _ensure_within_workspace(output_dir, workspace)
+        os.environ.setdefault("CODEX_PROMPT", os.environ.get("CODEX_PROMPT", "<no prompt provided>"))
+        exit_code = _run_placeholder(workspace, output_dir)
+        flags = _collect_flags("--auto" if args.auto else None, "--yolo" if args.yolo else None)
+        _write_metadata(workspace, flags)
+        return exit_code
+
+    if command == "exec":
+        args = _parse_exec_args(argv[1:])
+        cd_target = args.cd or os.environ.get("CODEX_WORKDIR", "/work")
+        workspace = Path(cd_target).expanduser().resolve()
+        if not workspace.exists():
+            raise SystemExit(f"Workspace does not exist: {workspace}")
+        prompt = _resolve_prompt(getattr(args, "prompt_argument", None))
+        os.environ["CODEX_PROMPT"] = prompt
+        if getattr(args, "command_arguments", None):
+            print("codex stub: ignoring exec COMMAND arguments", file=sys.stderr)
+        exit_code = _run_placeholder(workspace, workspace)
+        flags = _collect_flags("--skip-git-repo-check", "--yolo" if args.yolo else None)
+        _write_metadata(workspace, flags)
+        return exit_code
+
+    raise SystemExit(f"Unsupported command: {command}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,414 @@
+#!/usr/bin/env python3
+"""Ad-hoc helper to exercise the Docker codex runner end-to-end.
+
+Creates a throwaway project (or reuses a supplied path/ID), registers it via the
+FastAPI orchestrator when needed, submits a task (or inspects an existing one),
+and prints the resulting logs plus `CODEX_CHANGE.log` from the sanitized
+workspace. Defaults to Docker mode, supports per-run snapshots, custom network
+allowlists, and skips cleanup when requested. Accepts either a Codex access
+token or a ChatGPT session bundle for authentication.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+
+from fastapi.testclient import TestClient
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LOG_DIVIDER = "-" * 60
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+
+def _reset_app_modules() -> None:
+    """Discard cached `app.app.*` modules so Fresh imports re-init the app."""
+    for name in list(sys.modules.keys()):
+        if name.startswith("app.app"):
+            sys.modules.pop(name)
+
+
+def _bootstrap_app() -> TestClient:
+    """Return a TestClient wired up to a freshly initialised FastAPI app."""
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+    from app.app import main as main_module
+
+    return TestClient(main_module.app)
+
+
+def _create_sample_project(root: Path) -> Path:
+    """Seed a minimal git-initialised project for the task run."""
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "README.md").write_text("docker path demo\n", encoding="utf-8")
+    (root / "notes.txt").write_text("original content\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "config", "user.email", "codex-docker@example.com"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "config", "user.name", "Codex Docker"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "add", "."], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return root
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run a placeholder codex task via Docker")
+    parser.add_argument(
+        "--prompt",
+        default="Test docker codex run",
+        help="Prompt text to send with the task",
+    )
+    parser.add_argument(
+        "--project-root",
+        type=Path,
+        help="Optional project directory to reuse instead of creating a sample project",
+    )
+    parser.add_argument(
+        "--keep-workspace",
+        action="store_true",
+        help="Skip deleting the sanitized workspace under workspaces/<task>/safe",
+    )
+    parser.add_argument(
+        "--allowlist",
+        metavar="HOST",
+        nargs="+",
+        help="Optional list of allowlisted domains to attach to the task",
+    )
+    parser.add_argument(
+        "--project-id",
+        type=int,
+        help="Use an existing project ID instead of registering a new project",
+    )
+    parser.add_argument(
+        "--task-id",
+        type=int,
+        help="Inspect an existing task ID instead of submitting a new task",
+    )
+    parser.add_argument(
+        "--snapshot-prefix",
+        help=(
+            "Copy the sanitized workspace into workspaces/snapshots/<prefix>-<timestamp> "
+            "so multiple runs can be inspected side-by-side"
+        ),
+    )
+    parser.add_argument(
+        "--snapshot-dir",
+        type=Path,
+        default=REPO_ROOT / "workspaces" / "snapshots",
+        help="Directory where workspace snapshots should be stored (default: workspaces/snapshots)",
+    )
+    parser.add_argument(
+        "--gitlab-token",
+        default=os.environ.get("GITLAB_PAT"),
+        help=(
+            "GitLab personal access token with write_repository scope. "
+            "Defaults to GITLAB_PAT when set."
+        ),
+    )
+    parser.add_argument(
+        "--codex-token",
+        default=os.environ.get("CODEX_ACCESS_TOKEN"),
+        help="Codex access token to register with the project (defaults to CODEX_ACCESS_TOKEN)",
+    )
+    parser.add_argument(
+        "--disable-docker",
+        action="store_true",
+        help="Force the helper to run with RUNNER_DISABLE_DOCKER=1 (stub mode)",
+    )
+    parser.add_argument(
+        "--expect-auth-failure",
+        action="store_true",
+        help="Assert that the Codex task fails due to authentication issues",
+    )
+    parser.add_argument(
+        "--gitlab-host",
+        default="https://gitlab.example.com",
+        help="GitLab host to register with the project (default: https://gitlab.example.com)",
+    )
+    parser.add_argument(
+        "--gitlab-project-path",
+        default="example/docker-demo",
+        help="Namespace/repo path for the demo project (default: example/docker-demo)",
+    )
+    parser.add_argument(
+        "--session-bundle",
+        type=Path,
+        help="Path to a ChatGPT auth.json bundle to import before running the task",
+    )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Disable RUNNER_GIT_DRY_RUN and push to GitLab (requires valid token and allowlisted network)",
+    )
+    return parser.parse_args()
+
+
+def _resolve_project_path(args: argparse.Namespace, scratch_dir: Path) -> Path:
+    if args.project_root:
+        project_path = args.project_root.expanduser().resolve()
+        if not project_path.exists():
+            raise FileNotFoundError(f"Project root does not exist: {project_path}")
+        return project_path
+    return _create_sample_project(scratch_dir / "docker-demo-project")
+
+
+def _register_project(
+    client: TestClient,
+    project_root: Path,
+    gitlab_token: str,
+    *,
+    gitlab_host: str,
+    gitlab_project_path: str,
+    codex_token: Optional[str],
+) -> int:
+    payload = {
+        "name": "docker-demo-project",
+        "local_path": str(project_root),
+        "default_branch": "main",
+        "gitlab_host": gitlab_host,
+        "gitlab_project_path": gitlab_project_path,
+    }
+    payload["gitlab_token"] = gitlab_token
+    if codex_token:
+        payload["codex_token"] = codex_token
+    response = client.post("/projects", json=payload)
+    response.raise_for_status()
+    return response.json()["id"]
+
+
+def _submit_task(client: TestClient, project_id: int, prompt: str, allowlist: list[str]) -> int:
+    response = client.post(
+        "/tasks",
+        json={
+            "project_id": project_id,
+            "prompt": prompt,
+            "allowlist": allowlist,
+        },
+    )
+    response.raise_for_status()
+    return response.json()["id"]
+
+
+def _wait_for_completion(client: TestClient, task_id: int, timeout: float = 40.0) -> dict:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        detail_resp = client.get(f"/tasks/{task_id}")
+        detail_resp.raise_for_status()
+        payload = detail_resp.json()
+        if payload["status"] in {"done", "failed"}:
+            return payload
+        time.sleep(0.5)
+    raise TimeoutError(f"Task {task_id} did not finish within {timeout} seconds")
+
+
+def _print_logs(client: TestClient, task_id: int) -> list[str]:
+    log_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
+    log_resp.raise_for_status()
+    entries = log_resp.json().get("entries", [])
+    print(LOG_DIVIDER)
+    print("Task log snapshot:")
+    for entry in entries:
+        print(entry)
+    print(LOG_DIVIDER)
+    return entries
+
+
+def _show_change_log(workspace_path: Optional[Path]) -> None:
+    if workspace_path is None:
+        print("Sanitized workspace unavailable; skipping CODEX_CHANGE.log inspection")
+        return
+
+    change_log = workspace_path / "CODEX_CHANGE.log"
+    if not change_log.exists():
+        print("CODEX_CHANGE.log missing from workspace")
+        return
+    print("CODEX_CHANGE.log contents:\n")
+    print(change_log.read_text(encoding="utf-8"))
+
+
+def _snapshot_workspace(workspace_path: Path, snapshot_dir: Path, prefix: str) -> Path:
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    destination = snapshot_dir / f"{prefix}-{timestamp}"
+    if destination.exists():
+        raise FileExistsError(f"Snapshot destination already exists: {destination}")
+    shutil.copytree(workspace_path, destination)
+    print(f"Snapshot copied to {destination}")
+    return destination
+
+
+def main() -> None:
+    args = _parse_args()
+    scratch_dir_obj: Optional[tempfile.TemporaryDirectory[str]] = None
+
+    created_task = False
+    snapshot_path: Optional[Path] = None
+    workspace_path: Optional[Path] = None
+    original_db_url = os.environ.get("APP_DATABASE_URL")
+    original_dry_run = os.environ.get("RUNNER_GIT_DRY_RUN")
+    original_disable_docker = os.environ.get("RUNNER_DISABLE_DOCKER")
+    using_temp_db = original_db_url is None
+
+    if args.live:
+        if not args.gitlab_token:
+            raise RuntimeError("--live requires --gitlab-token or GITLAB_PAT to be set")
+        os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+    else:
+        os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        if not args.gitlab_token:
+            args.gitlab_token = "dry-run-token"
+        print("Running in dry-run mode: pushes and MR creation are skipped; using placeholder GitLab token.")
+
+    if args.disable_docker:
+        os.environ["RUNNER_DISABLE_DOCKER"] = "1"
+        print("Docker disabled via --disable-docker; stub runner will be used.")
+    else:
+        os.environ.pop("RUNNER_DISABLE_DOCKER", None)
+        if not args.codex_token and not args.session_bundle:
+            print("warning: no Codex credential supplied; task will abort before launching the real agent")
+
+    try:
+        scratch_dir_obj = tempfile.TemporaryDirectory()
+        scratch_dir = Path(scratch_dir_obj.name)
+        if using_temp_db:
+            os.environ["APP_DATABASE_URL"] = f"sqlite:///{scratch_dir / 'helper.db'}"
+
+        _reset_app_modules()
+        with _bootstrap_app() as client:
+            helper_actor = "docker-helper"
+            if args.gitlab_token:
+                rotate_payload = {"token": args.gitlab_token, "updated_by": helper_actor}
+                rotate_resp = client.post("/integrations/pat", json=rotate_payload)
+                rotate_resp.raise_for_status()
+            else:
+                status_payload = client.get("/integrations/pat").json()
+                if not status_payload.get("configured"):
+                    raise RuntimeError(
+                        "GitLab PAT not configured; provide --gitlab-token or pre-configure via the integrations API",
+                    )
+
+            if args.session_bundle:
+                try:
+                    bundle_text = args.session_bundle.read_text(encoding="utf-8")
+                except OSError as exc:  # noqa: BLE001
+                    raise RuntimeError(f"Failed to read session bundle: {exc}") from exc
+                session_payload = {"bundle": bundle_text, "updated_by": helper_actor}
+                session_resp = client.post("/integrations/pat/session", json=session_payload)
+                session_resp.raise_for_status()
+
+            status_snapshot = client.get("/integrations/pat").json()
+            pat_flag = "configured" if status_snapshot.get("configured") else "missing"
+            session_flag = "configured" if status_snapshot.get("session_configured") else "missing"
+            active_kind = status_snapshot.get("active_credential", "none")
+            print(
+                f"Credential status -> GitLab PAT: {pat_flag}, ChatGPT session: {session_flag}, active: {active_kind}"
+            )
+
+            project_id: Optional[int] = args.project_id
+            if args.task_id is None:
+                project_root: Optional[Path] = None
+                if project_id is None:
+                    project_root = _resolve_project_path(args, scratch_dir)
+                    project_id = _register_project(
+                        client,
+                        project_root,
+                        args.gitlab_token,
+                        gitlab_host=args.gitlab_host,
+                        gitlab_project_path=args.gitlab_project_path,
+                        codex_token=args.codex_token,
+                    )
+                    print(
+                        "Registered project {pid} at {root} (GitLab: {host}/{path})".format(
+                            pid=project_id,
+                            root=project_root,
+                            host=args.gitlab_host.rstrip('/'),
+                            path=args.gitlab_project_path,
+                        )
+                    )
+                else:
+                    print(f"Using existing project {project_id} for new task")
+                    if args.codex_token:
+                        print("warning: --codex-token ignored when reusing an existing project")
+            elif project_id is not None:
+                print(f"Using existing project {project_id} for inspection")
+
+            if args.task_id is not None:
+                task_id = args.task_id
+                print(f"Inspecting existing task {task_id}")
+            else:
+                allowlist = args.allowlist or []
+                if project_id is None:
+                    raise RuntimeError("Project ID required to submit a new task")
+                task_id = _submit_task(client, project_id, args.prompt, allowlist)
+                print(
+                    f"Submitted task {task_id} (project_id={project_id}, allowlist={allowlist or '[]'})"
+                )
+                created_task = True
+
+            result = _wait_for_completion(client, task_id)
+            print(f"Task status: {result['status']}")
+            workspace_location = result.get("workspace_path")
+            if workspace_location:
+                workspace_path = Path(workspace_location)
+                print(f"Sanitized workspace: {workspace_path}")
+            else:
+                print("Sanitized workspace path missing from task result")
+
+            if result.get("codex_agent_version"):
+                print(f"Codex agent version: {result['codex_agent_version']}")
+            if result.get("codex_invocation"):
+                print(f"Codex invocation: {result['codex_invocation']}")
+
+            if args.expect_auth_failure and result["status"] != "failed":
+                raise RuntimeError("Expected Codex auth failure but task completed successfully")
+            if not args.expect_auth_failure and result["status"] != "done":
+                raise RuntimeError(f"Task did not succeed (status={result['status']})")
+
+            _print_logs(client, task_id)
+            _show_change_log(workspace_path)
+
+            if args.snapshot_prefix and workspace_path is not None:
+                snapshot_path = _snapshot_workspace(workspace_path, args.snapshot_dir, args.snapshot_prefix)
+
+    finally:
+        if scratch_dir_obj:
+            scratch_dir_obj.cleanup()
+        if using_temp_db:
+            os.environ.pop("APP_DATABASE_URL", None)
+        elif original_db_url is not None:
+            os.environ["APP_DATABASE_URL"] = original_db_url
+        if original_dry_run is None:
+            os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        else:
+            os.environ["RUNNER_GIT_DRY_RUN"] = original_dry_run
+        if original_disable_docker is None:
+            os.environ.pop("RUNNER_DISABLE_DOCKER", None)
+        else:
+            os.environ["RUNNER_DISABLE_DOCKER"] = original_disable_docker
+
+    if created_task and not args.keep_workspace and workspace_path is not None:
+        workspace_parent = workspace_path.parent
+        if workspace_parent.exists():
+            shutil.rmtree(workspace_parent, ignore_errors=True)
+
+    if args.snapshot_prefix and 'snapshot_path' in locals() and snapshot_path is not None:
+        print(f"Sanitized workspace snapshot preserved at {snapshot_path}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as exc:  # noqa: BLE001 - propagate user-facing failure
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)

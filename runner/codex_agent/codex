@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""Lightweight Codex agent shim used for local end-to-end testing.
+
+This command emulates the real `codex` CLI enough for the orchestrator to
+exercise the Docker runner path. It validates authentication, records the
+prompt, and makes deterministic edits inside the workspace so git commits and
+merge requests contain concrete changes.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+from datetime import datetime, timezone
+import os
+import sys
+from pathlib import Path
+
+AGENT_VERSION = "codex-agent/1.0"
+DEFAULT_OUTPUT_FILENAME = "CODEX_SUMMARY.md"
+CHANGELOG_FILENAME = "CODEX_CHANGE.log"
+AUTH_FAILURE_CODE = 42
+
+
+def _create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="codex", description="Codex agent shim")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    run_parser = subparsers.add_parser("run", help="Execute a Codex task")
+    run_parser.add_argument("--project", required=True, help="Workspace to operate on")
+    run_parser.add_argument("--out", default=None, help="Directory for artifacts (defaults to workspace)")
+    run_parser.add_argument("--auto", action="store_true", help="Ignored automation flag")
+    run_parser.add_argument("--yolo", action="store_true", help="Ignored approval bypass flag")
+
+    exec_parser = subparsers.add_parser("exec", help="Execute Codex in non-interactive mode")
+    exec_parser.add_argument("--cd", dest="cd", default=None, help="Workspace to operate in")
+    exec_parser.add_argument("--skip-git-repo-check", action="store_true", help="Allow execution outside git repos")
+    exec_parser.add_argument("--yolo", dest="yolo", action="store_true", help="Bypass approval prompts")
+    exec_parser.add_argument(
+        "--dangerously-bypass-approvals-and-sandbox",
+        dest="yolo",
+        action="store_true",
+        help="Bypass approval prompts",
+    )
+    exec_parser.add_argument("--json", action="store_true", help="Ignored JSON output toggle")
+    exec_parser.add_argument("--include-plan-tool", action="store_true", help="Ignored plan tool toggle")
+    exec_parser.add_argument("--full-auto", action="store_true", help="Ignored convenience toggle")
+    exec_parser.add_argument("-a", "--ask-for-approval", dest="ask_for_approval", help="Ignored approval setting")
+    exec_parser.add_argument("-s", "--sandbox", dest="sandbox", help="Ignored sandbox override")
+    exec_parser.add_argument("-p", "--profile", dest="profile", help="Ignored profile selector")
+    exec_parser.add_argument("-m", "--model", dest="model", help="Ignored model override")
+    exec_parser.add_argument("-c", "--config", dest="config", action="append", help="Ignored config overrides")
+    exec_parser.add_argument("--oss", action="store_true", help="Ignored OSS shortcut")
+    exec_parser.add_argument("--output-last-message", dest="output_last_message", help="Ignored output selector")
+    exec_parser.add_argument("--output-schema", dest="output_schema", help="Ignored schema selector")
+    exec_parser.add_argument("--color", dest="color", help="Ignored color option")
+    exec_parser.add_argument("-i", "--image", dest="images", action="append", help="Ignored image attachment")
+    exec_parser.add_argument("prompt", nargs="?", default=None, help="Initial instructions for the agent")
+    exec_parser.add_argument("command_args", nargs=argparse.REMAINDER, help="Optional follow-up command (ignored)")
+
+    return parser
+
+
+def _require_token() -> str:
+    raw_token = os.environ.get("CODEX_ACCESS_TOKEN", "").strip()
+    session_token = _extract_session_token()
+
+    if not raw_token and session_token:
+        # Populate the env var so downstream tools that expect it still work.
+        os.environ["CODEX_ACCESS_TOKEN"] = session_token
+        raw_token = session_token
+
+    if raw_token and _token_looks_valid(raw_token):
+        return raw_token
+
+    if raw_token:
+        print('codex agent: invalid token supplied', file=sys.stderr)
+    else:
+        print('codex agent: CODEX_ACCESS_TOKEN is required', file=sys.stderr)
+    raise SystemExit(AUTH_FAILURE_CODE)
+
+
+def _token_looks_valid(token: str) -> bool:
+    token = token.strip()
+    if not token:
+        return False
+    if token.startswith("sk-") and len(token) > 20:
+        return True
+    if token.startswith("eyJ") and len(token) > 40:
+        return True
+    return False
+
+
+def _extract_session_token() -> str | None:
+    """Return an access/session token from the bundled ChatGPT session."""
+    bundle_text = _load_session_bundle_text()
+    if not bundle_text:
+        return None
+
+    try:
+        payload = json.loads(bundle_text)
+    except json.JSONDecodeError:
+        print('codex agent: session bundle contained invalid JSON', file=sys.stderr)
+        return None
+
+    candidate_dicts = []
+    session_node = payload.get("session")
+    if isinstance(session_node, dict):
+        candidate_dicts.append(session_node)
+
+    tokens_node = payload.get("tokens")
+    if isinstance(tokens_node, dict):
+        candidate_dicts.append(tokens_node)
+
+    candidate_dicts.append(payload)
+
+    for candidate in candidate_dicts:
+        for key in ("session_token", "sessionToken", "access_token", "accessToken"):
+            value = candidate.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return None
+
+
+def _load_session_bundle_text() -> str | None:
+    path_value = os.environ.get("CODEX_SESSION_BUNDLE_PATH", "").strip()
+    if path_value:
+        bundle_path = Path(path_value)
+        if bundle_path.exists():
+            try:
+                return bundle_path.read_text(encoding="utf-8")
+            except OSError as exc:
+                print(f'codex agent: failed to read session bundle: {exc}', file=sys.stderr)
+                return None
+
+    bundle_b64 = os.environ.get("CODEX_SESSION_BUNDLE_B64", "").strip()
+    if not bundle_b64:
+        return None
+
+    try:
+        return base64.b64decode(bundle_b64).decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as exc:
+        print(f'codex agent: failed to decode session bundle: {exc}', file=sys.stderr)
+        return None
+
+
+def _resolve_paths(project_arg: str, out_arg: str | None) -> tuple[Path, Path]:
+    workspace = Path(project_arg).expanduser().resolve()
+    if not workspace.exists():
+        raise SystemExit(f"Workspace does not exist: {workspace}")
+
+    if out_arg:
+        output_root = Path(out_arg).expanduser().resolve()
+    else:
+        output_root = workspace
+
+    try:
+        output_root.relative_to(workspace)
+    except ValueError as exc:
+        raise SystemExit(f"Output directory must be inside the workspace: {output_root}") from exc
+
+    output_root.mkdir(parents=True, exist_ok=True)
+    return workspace, output_root
+
+
+def _resolve_prompt_argument(prompt_value: str | None) -> str:
+    if prompt_value == "-":
+        return sys.stdin.read()
+    if prompt_value is not None:
+        return prompt_value
+    return os.environ.get("CODEX_PROMPT", "")
+
+
+def _render_summary(prompt: str, token: str) -> str:
+    timestamp = datetime.now(timezone.utc).isoformat()
+    token_suffix = token[-6:]
+    summary = ["# Codex Task Summary", ""]
+    summary.append(f"- timestamp: {timestamp}")
+    summary.append(f"- prompt: {prompt or '<empty>'}")
+    summary.append(f"- token_suffix: {token_suffix}")
+    summary.append("")
+    summary.append("## Proposed Changes")
+    summary.append("- Added this summary file with task context.")
+    if prompt:
+        summary.append("- Prompt echoed in CODEX_CHANGE.log and summary file.")
+    return "\n".join(summary) + "\n"
+
+
+def _write_files(workspace: Path, output_root: Path, prompt: str, token: str) -> None:
+    summary_path = output_root / DEFAULT_OUTPUT_FILENAME
+    summary_path.write_text(_render_summary(prompt, token), encoding="utf-8")
+
+    changelog_path = workspace / CHANGELOG_FILENAME
+    timestamp = datetime.now(timezone.utc).isoformat()
+    lines = [
+        f"{timestamp}: codex agent executed",
+        f"prompt: {prompt or '<empty>'}",
+        "",
+    ]
+    new_content = "\n".join(lines)
+    if changelog_path.exists():
+        existing = changelog_path.read_text(encoding="utf-8")
+        changelog_path.write_text(existing + new_content, encoding="utf-8")
+    else:
+        changelog_path.write_text(new_content, encoding="utf-8")
+
+    notes_path = workspace / "notes.txt"
+    if notes_path.exists():
+        with notes_path.open("a", encoding="utf-8") as handle:
+            handle.write("\nUpdated by Codex agent: " + datetime.now(timezone.utc).isoformat())
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    if not argv:
+        print(AGENT_VERSION)
+        return 0
+    if argv[0] in {"--version", "-V"}:
+        print(AGENT_VERSION)
+        return 0
+
+    parser = _create_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "run":
+        prompt = os.environ.get("CODEX_PROMPT", "").strip()
+        token = _require_token()
+        workspace, output_root = _resolve_paths(args.project, args.out)
+
+        print(f"codex agent: starting run in {workspace}")
+        if prompt:
+            print(f"codex agent: prompt length {len(prompt)} characters")
+
+        _write_files(workspace, output_root, prompt, token)
+
+        print("codex agent: artifacts written to", output_root)
+        return 0
+
+    if args.command == "exec":
+        prompt = _resolve_prompt_argument(args.prompt)
+        os.environ["CODEX_PROMPT"] = prompt
+        token = _require_token()
+        workspace_arg = args.cd or os.environ.get("CODEX_WORKDIR", "/work")
+        workspace, output_root = _resolve_paths(workspace_arg, None)
+
+        print(f"codex agent: starting run in {workspace}")
+        if prompt:
+            print(f"codex agent: prompt length {len(prompt)} characters")
+        if getattr(args, "command_args", None):
+            print("codex agent: ignoring exec COMMAND arguments", file=sys.stderr)
+
+        _write_files(workspace, output_root, prompt, token)
+
+        print("codex agent: artifacts written to", output_root)
+        return 0
+
+    parser.error(f"Unsupported command: {args.command}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

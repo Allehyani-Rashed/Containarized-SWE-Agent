@@ -1,0 +1,39 @@
+# Files and directories to exclude from sanitized task workspaces
+# Secrets
+.env
+.env.*
+*.env
+*.env.*
+
+# Cloud credentials and configs
+.aws/
+.kube/
+
+# Build artifacts and dependencies
+node_modules/
+dist/
+build/
+target/
+out/
+coverage/
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and caches
+logs/
+*.log
+*.cache
+.cache/
+.tmp/
+*.tmp
+
+# Tooling metadata
+.vscode/
+.idea/
+.DS_Store
+
+# Internal workspaces
+workspaces/
+venv/
+.venv/
