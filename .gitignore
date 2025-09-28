@@ -32,3 +32,5 @@ nohup.out
 
 # Sanitizer configuration
 !.projectsanitize
+
+chatgpt_session_bundle.json
