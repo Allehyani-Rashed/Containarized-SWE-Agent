@@ -114,6 +114,38 @@ class EnvSyncTests(unittest.TestCase):
             assert material is not None
             self.assertEqual(material.raw, '{"session_token": "token-123"}')
 
+    def test_sync_from_env_file_with_inline_session(self) -> None:
+        env_file = Path(self.tmp_dir.name) / ".env"
+        inline_bundle = '{"session_token":"inline-token"}'
+        env_file.write_text(
+            "\n".join(
+                [
+                    "APP_SECRET_KEY="
+                    + base64.urlsafe_b64encode(b"env-sync-secret-key-32-bytes-ABC").decode(),
+                    f"CHATGPT_SESSION_JSON='{inline_bundle}'",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        result = self.env_sync.sync_credentials_from_env_file(
+            env_file,
+            actor="env-sync-tests",
+            repo_root=Path(self.tmp_dir.name),
+        )
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertTrue(result.session_bundle_updated)
+
+        from sqlmodel import Session
+        from app.app.integrations import get_chatgpt_session_bundle
+
+        with Session(self.engine) as session:
+            material = get_chatgpt_session_bundle(session)
+            assert material is not None
+            self.assertEqual(material.raw, inline_bundle)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

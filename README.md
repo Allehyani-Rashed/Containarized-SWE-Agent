@@ -11,7 +11,7 @@ A local-first playground for the Codex runner: give it a prompt, it sanitizes yo
 ## Before You Start
 - Docker Engine ≥ 26 with Compose v2.24.
 - Python 3.11.x, Node.js 22.x, npm 10.x, Git ≥ 2.44.
-- A `.env` file based on `.env.example` with your GitLab project path, PAT, Codex token (or ChatGPT bundle), and `DOCKER_HOST` socket. By default the tooling reads a session bundle from `chatgpt_session_bundle.json`; override with `CHATGPT_SESSION_BUNDLE_PATH` or inline `CHATGPT_SESSION_BUNDLE`.
+- A `.env` file based on `.env.example` with your GitLab project path, PAT, Codex token (or ChatGPT bundle), and `DOCKER_HOST` socket. By default the tooling reads a session bundle from `chatgpt_session_bundle.json`; override with `CHATGPT_SESSION_BUNDLE_PATH` or embed JSON inline via `CHATGPT_SESSION_BUNDLE`/`CHATGPT_SESSION_JSON`.
 
 ## First Run (about 5 minutes)
 1. Copy and edit your config:
@@ -23,7 +23,7 @@ A local-first playground for the Codex runner: give it a prompt, it sanitizes yo
    ```bash
    ./scripts/quickstart.sh
    ```
-   This builds the Docker runner, installs backend/frontend dependencies, starts the Tinyproxy sidecar, and writes credentials from `.env` into the local database (PAT, Codex token, and optional ChatGPT session bundle).
+   This builds the Docker runner (always forcing a fresh `local-codex-runner:latest` image), installs backend/frontend dependencies, starts the Tinyproxy sidecar, and writes credentials from `.env` into the local database (PAT, Codex token, and optional ChatGPT session bundle). Stale virtualenvs are rebuilt automatically if your Python path changes.
 3. Start the app servers:
    ```bash
    source .venv/bin/activate
@@ -69,10 +69,11 @@ Watch the run live in the dashboard. When Docker is available the orchestrator s
 ## Everyday Commands
 - `make dev` – run backend + UI together.
 - `make stop` – stop dev servers and compose sidecars.
-- `make reset` – remove Codex containers, SQLite state, and sanitized workspaces.
+- `make reset` – remove Codex containers, SQLite state, sanitized workspaces, and the cached `local-codex-runner:latest` image so the next quickstart rebuilds the runner.
 - `python3 scripts/test_docker_path.py --disable-docker` – quick smoke test of the workflow.
 - `make threat-scan` – verifies container guardrails and breakout probes.
 - `scripts/codex pat store|clear|import-chatgpt` – manage GitLab PATs or Codex session bundles.
+- The backend re-syncs `.env` credentials on startup. Override the env file via `APP_ENV_FILE=/path/to/.env` or disable auto sync with `APP_ENV_SYNC_DISABLE=1`.
 
 ## Good To Know
 - Tasks route through Tinyproxy with a deny-by-default allowlist. Adjust long-lived domains in `proxy/base_allowlist.conf`; use task-level `allowlist` entries for one-offs.

@@ -83,12 +83,24 @@ ensure_python_env() {
   py_version=$(version_python "$PYTHON_BIN")
   warn_if_version_differs "Python" "$PYTHON_VERSION_EXPECTED" "$py_version"
 
+  local venv_python="$venv_dir/bin/python"
+  if [[ -d "$venv_dir" ]]; then
+    local pip_shebang=""
+    if [[ -f "$venv_dir/bin/pip" ]]; then
+      pip_shebang=$(head -n 1 "$venv_dir/bin/pip" 2>/dev/null || true)
+    fi
+    if [[ ! -x "$venv_python" ]] || [[ -n "$pip_shebang" && "$pip_shebang" != "#!$venv_python" ]]; then
+      echo "removing stale virtualenv at $venv_dir"
+      rm -rf "$venv_dir"
+    fi
+  fi
+
   if [[ ! -d "$venv_dir" ]]; then
     echo "creating virtualenv at $venv_dir"
     "$PYTHON_BIN" -m venv "$venv_dir"
   fi
 
-  "$venv_dir/bin/python" -m pip install --upgrade pip >/dev/null
+  "$venv_python" -m pip install --upgrade pip >/dev/null
   "$venv_dir/bin/pip" install --upgrade -r "$ROOT_DIR/app/requirements.txt"
 }
 
@@ -110,8 +122,13 @@ ensure_docker_setup() {
   docker_version=$(version_docker)
   warn_if_version_differs "Docker" "$DOCKER_VERSION_EXPECTED" "$docker_version"
 
+  if docker image inspect local-codex-runner:latest >/dev/null 2>&1; then
+    echo "removing cached runner image"
+    docker image rm -f local-codex-runner:latest >/dev/null 2>&1 || true
+  fi
+
   echo "building runner image (local-codex-runner:latest)"
-  local build_args=()
+  local -a build_args=()
   if [[ -n "${CODEX_AGENT_TARBALL:-}" && -n "${CODEX_AGENT_URL:-}" ]]; then
     echo "error: set either CODEX_AGENT_TARBALL or CODEX_AGENT_URL (not both)" >&2
     exit 1
@@ -124,7 +141,7 @@ ensure_docker_setup() {
     echo "  • downloading Codex agent from: ${CODEX_AGENT_URL}"
     build_args+=(--build-arg "CODEX_AGENT_URL=${CODEX_AGENT_URL}")
   fi
-  docker build "${build_args[@]}" -f "$ROOT_DIR/runner/Dockerfile" -t local-codex-runner:latest "$ROOT_DIR"
+  docker build ${build_args[@]+"${build_args[@]}"} -f "$ROOT_DIR/runner/Dockerfile" -t local-codex-runner:latest "$ROOT_DIR"
 
   echo "starting Tinyproxy sidecar"
   (cd "$ROOT_DIR" && docker compose up -d codex-egress-proxy)

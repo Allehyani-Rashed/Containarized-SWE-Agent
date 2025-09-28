@@ -31,6 +31,11 @@ if command -v docker >/dev/null 2>&1; then
     log "Removing docker network codex-shared"
     docker network rm codex-shared >/dev/null 2>&1 || true
   fi
+
+  if docker image inspect local-codex-runner:latest >/dev/null 2>&1; then
+    log "Removing docker image local-codex-runner:latest"
+    docker image rm -f local-codex-runner:latest >/dev/null 2>&1 || true
+  fi
 else
   log "Docker not found; skipping container cleanup"
 fi

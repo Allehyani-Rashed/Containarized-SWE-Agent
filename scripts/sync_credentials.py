@@ -4,10 +4,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
-from typing import Dict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
@@ -35,51 +33,24 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _set_env_vars(values: Dict[str, str]) -> None:
-    for key, value in values.items():
-        if key == "APP_SECRET_KEY" and value:
-            os.environ[key] = value
-        elif key not in os.environ:
-            os.environ[key] = value
-
-
 def main() -> int:
     args = _parse_args()
-    env_file = args.env_file
-    if not env_file.exists():
-        print(f"warning: env file not found: {env_file}", file=sys.stderr)
-        return 0
-
-    # Defer heavy imports until after env vars are populated.
-    from app.app.env_sync import EnvConfig, EnvSyncError, parse_env_file, sync_credentials
-    from app.app.secrets import reset_secret_manager
-
-    env_values = parse_env_file(env_file)
-    _set_env_vars(env_values)
-    reset_secret_manager()
-
-    session_bundle_inline = env_values.get("CHATGPT_SESSION_BUNDLE")
-    session_bundle_path = env_values.get("CHATGPT_SESSION_BUNDLE_PATH")
-    bundle_path = Path(session_bundle_path).expanduser() if session_bundle_path else None
-
-    config = EnvConfig(
-        gitlab_pat=env_values.get("GITLAB_PAT"),
-        codex_token=env_values.get("CODEX_ACCESS_TOKEN"),
-        project_name=env_values.get("PROJECT_NAME"),
-        project_local_path=env_values.get("PROJECT_LOCAL_PATH"),
-        project_default_branch=env_values.get("PROJECT_DEFAULT_BRANCH"),
-        gitlab_host=env_values.get("GITLAB_HOST"),
-        gitlab_project_path=env_values.get("GITLAB_PROJECT_PATH"),
-        session_bundle_path=bundle_path,
-        session_bundle_inline=session_bundle_inline,
-        actor=args.actor,
-    )
+    # Defer heavy imports until after sys.path mutation.
+    from app.app.env_sync import EnvSyncError, sync_credentials_from_env_file
 
     try:
-        result = sync_credentials(config, repo_root=PROJECT_ROOT)
+        result = sync_credentials_from_env_file(
+            args.env_file,
+            actor=args.actor,
+            repo_root=PROJECT_ROOT,
+        )
     except EnvSyncError as exc:
         print(f"error: credential sync failed: {exc}", file=sys.stderr)
         return 1
+
+    if result is None:
+        print(f"warning: env file not found: {args.env_file}", file=sys.stderr)
+        return 0
 
     messages = []
     if result.gitlab_pat_updated:

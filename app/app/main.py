@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List
 
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, status
@@ -34,10 +37,56 @@ from .schemas import (
     TaskLogSnapshot,
     TaskRead,
 )
+from .env_sync import DEFAULT_ENV_FILE, EnvSyncError, sync_credentials_from_env_file
 from .secrets import get_secret_manager
 from .worker import TaskQueueManager
 
 _worker: TaskQueueManager | None = None
+logger = logging.getLogger(__name__)
+
+ENV_SYNC_DISABLE_VAR = "APP_ENV_SYNC_DISABLE"
+ENV_SYNC_FILE_VAR = "APP_ENV_FILE"
+
+
+def _env_var_disabled(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _sync_env_credentials_on_startup() -> None:
+    if _env_var_disabled(os.getenv(ENV_SYNC_DISABLE_VAR)):
+        logger.info("Skipping env credential sync (disabled via %s)", ENV_SYNC_DISABLE_VAR)
+        return
+
+    env_override = os.getenv(ENV_SYNC_FILE_VAR)
+    env_path = Path(env_override).expanduser() if env_override else DEFAULT_ENV_FILE
+
+    try:
+        result = sync_credentials_from_env_file(env_path, actor="startup")
+    except EnvSyncError as exc:
+        logger.warning("Automatic credential sync failed: %s", exc)
+        return
+
+    if result is None:
+        return
+
+    changes: list[str] = []
+    if result.gitlab_pat_updated:
+        changes.append("GitLab PAT")
+    if result.session_bundle_updated:
+        changes.append("ChatGPT session bundle")
+    if result.project_created:
+        changes.append("project created")
+    elif result.project_updated:
+        changes.append("project updated")
+    if result.codex_token_updated and not result.project_created:
+        changes.append("Codex token refreshed")
+
+    if changes:
+        logger.info("Synced credentials from %s (%s)", env_path, ", ".join(changes))
+    else:
+        logger.debug("Env credential sync completed with no changes (%s)", env_path)
 
 
 def get_worker() -> TaskQueueManager:
@@ -53,6 +102,7 @@ def get_worker_optional() -> TaskQueueManager | None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _worker
+    _sync_env_credentials_on_startup()
     init_db()
     worker = TaskQueueManager(engine)
     _worker = worker

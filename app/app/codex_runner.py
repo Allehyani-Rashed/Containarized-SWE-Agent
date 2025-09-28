@@ -72,7 +72,7 @@ def run_codex(
         raise CodexRunnerError("GitLab token is required for finish_task operations")
 
     metadata_path = workspace / CODEX_METADATA_FILENAME
-    result_path = workspace / "CODEX_RESULT.json"
+    result_path = workspace / "RUNNER_RESULT.json"
     for stale_path in (result_path, metadata_path):
         if stale_path.exists():
             try:
@@ -90,7 +90,7 @@ def run_codex(
         "MR_TITLE": mr_title,
         "TASK_ID": str(task_id),
         "PROMPT": prompt,
-        "RUNNER_RESULT_FILE": "CODEX_RESULT.json",
+        "RUNNER_RESULT_FILE": "RUNNER_RESULT.json",
         "CODEX_METADATA_FILE": CODEX_METADATA_FILENAME,
         "CODEX_INVOCATION_FLAGS": "--yolo --skip-git-repo-check",
     }

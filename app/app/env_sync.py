@@ -16,10 +16,12 @@ from .integrations import (
     set_gitlab_pat_token,
 )
 from .models import Project
-from .secrets import SecretError, get_secret_manager
+from .secrets import SecretError, get_secret_manager, reset_secret_manager
 
 ENV_ACTOR_FALLBACK = "env-sync"
 SESSION_BUNDLE_DEFAULT = "chatgpt_session_bundle.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_ENV_FILE = PROJECT_ROOT / ".env"
 
 
 class EnvSyncError(RuntimeError):
@@ -74,6 +76,26 @@ def parse_env_file(path: Path) -> Dict[str, str]:
                 value = value[1:-1]
         env[key] = value
     return env
+
+
+def _set_env_vars(values: Dict[str, str]) -> None:
+    for key, value in values.items():
+        if not value:
+            continue
+        if key == "APP_SECRET_KEY":
+            os.environ[key] = value
+            continue
+        if key not in os.environ:
+            os.environ[key] = value
+
+
+def _normalize_session_path(raw_path: Optional[str]) -> Optional[Path]:
+    if not raw_path:
+        return None
+    try:
+        return Path(raw_path).expanduser()
+    except Exception as exc:  # noqa: BLE001 - propagate readable error
+        raise EnvSyncError(f"invalid session bundle path '{raw_path}': {exc}") from exc
 
 
 def _read_session_bundle(config: EnvConfig, repo_root: Path) -> Optional[str]:
@@ -180,7 +202,7 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
 def sync_credentials(config: EnvConfig, *, repo_root: Optional[Path] = None) -> EnvSyncResult:
     """Sync credentials based on env-derived configuration."""
     if repo_root is None:
-        repo_root = Path(__file__).resolve().parents[2]
+        repo_root = PROJECT_ROOT
 
     init_db()
     result = EnvSyncResult()
@@ -205,6 +227,48 @@ def sync_credentials(config: EnvConfig, *, repo_root: Optional[Path] = None) -> 
             result.project_id = project_result.project_id
 
     return result
+
+
+def sync_credentials_from_env_file(
+    env_file: Optional[Path] = None,
+    *,
+    actor: Optional[str] = None,
+    repo_root: Optional[Path] = None,
+    apply_process_env: bool = True,
+) -> Optional[EnvSyncResult]:
+    """Load configuration from an env file and sync stored credentials."""
+
+    target_file = (env_file or DEFAULT_ENV_FILE).expanduser()
+    if not target_file.exists():
+        return None
+
+    env_values = parse_env_file(target_file)
+
+    if apply_process_env:
+        _set_env_vars(env_values)
+        reset_secret_manager()
+
+    session_bundle_inline = (
+        env_values.get("CHATGPT_SESSION_BUNDLE")
+        or env_values.get("CHATGPT_SESSION_JSON")
+        or env_values.get("CHATGPT_SESSION")
+    )
+    session_bundle_path = _normalize_session_path(env_values.get("CHATGPT_SESSION_BUNDLE_PATH"))
+
+    config = EnvConfig(
+        gitlab_pat=env_values.get("GITLAB_PAT"),
+        codex_token=env_values.get("CODEX_ACCESS_TOKEN"),
+        project_name=env_values.get("PROJECT_NAME"),
+        project_local_path=env_values.get("PROJECT_LOCAL_PATH"),
+        project_default_branch=env_values.get("PROJECT_DEFAULT_BRANCH"),
+        gitlab_host=env_values.get("GITLAB_HOST"),
+        gitlab_project_path=env_values.get("GITLAB_PROJECT_PATH"),
+        session_bundle_path=session_bundle_path,
+        session_bundle_inline=session_bundle_inline,
+        actor=actor or ENV_ACTOR_FALLBACK,
+    )
+
+    return sync_credentials(config, repo_root=repo_root or PROJECT_ROOT)
 
 
 def get_current_status() -> Dict[str, bool]:

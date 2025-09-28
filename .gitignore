@@ -29,3 +29,5 @@ workspaces/
 tmp-*.log
 tmp-*/
 nohup.out
+
+chatgpt_session_bundle.json

@@ -158,7 +158,7 @@ Implement an open-source **local-first** tool that:
 - [x] Inside runner, implement `finish_task.sh`:
   - Configures git identity, marks both `/work` and the sanitized path as safe, and disables hooks via `core.hooksPath=/dev/null`.
   - Generates `codex/task-<yyyymmdd>-<shortid>` branches, stages commits (allowing empty), and pushes with GitLab merge-request push options, falling back to the REST API or parsing push output to recover the MR URL.
-  - Supports local testing with `RUNNER_GIT_DRY_RUN=1` while redacting tokens (AskPass + oauth2 user) and writes `CODEX_RESULT.json` for the orchestrator to consume.
+  - Supports local testing with `RUNNER_GIT_DRY_RUN=1` while redacting tokens (AskPass + oauth2 user) and writes `RUNNER_RESULT.json` for the orchestrator to consume.
 - [x] Token scopes:
   - `write_repository` remains mandatory, `api` unlocks the merge-request lookup but the CLI still handles the fallback gracefully.
 - [x] Orchestrator/UI wiring:

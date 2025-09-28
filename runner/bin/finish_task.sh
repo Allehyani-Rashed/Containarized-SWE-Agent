@@ -17,10 +17,13 @@ require_env() {
   fi
 }
 
-REQUIRED_VARS=(GITLAB_TOKEN GITLAB_HOST GITLAB_PROJECT_PATH TARGET_BRANCH BRANCH MR_TITLE RUNNER_RESULT_FILE)
+REQUIRED_VARS=(GITLAB_TOKEN GITLAB_HOST GITLAB_PROJECT_PATH TARGET_BRANCH BRANCH MR_TITLE)
 for var in "${REQUIRED_VARS[@]}"; do
   require_env "$var"
 done
+
+RUNNER_RESULT_FILE=${RUNNER_RESULT_FILE:-RUNNER_RESULT.json}
+export RUNNER_RESULT_FILE
 
 WORKDIR=$(pwd)
 TASK_ID_LABEL=${TASK_ID:-unknown}
@@ -206,7 +209,7 @@ import json
 import os
 import pathlib
 
-result_path = os.environ.get("RUNNER_RESULT_FILE", "CODEX_RESULT.json")
+result_path = os.environ.get("RUNNER_RESULT_FILE", "RUNNER_RESULT.json")
 if not os.path.isabs(result_path):
     result_path = os.path.join(os.getcwd(), result_path)
 path = pathlib.Path(result_path)
