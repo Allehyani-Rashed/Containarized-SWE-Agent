@@ -65,6 +65,56 @@ version_docker() {
   docker --version 2>/dev/null | awk '{print $3}' | sed 's/,//'
 }
 
+ensure_projectsanitize() {
+  local sanitizer="$ROOT_DIR/.projectsanitize"
+  if [[ -f "$sanitizer" ]]; then
+    return
+  fi
+
+  cat <<'EOF' >"$sanitizer"
+# Files and directories to exclude from sanitized task workspaces
+# Secrets
+.env
+.env.*
+*.env
+*.env.*
+
+# Cloud credentials and configs
+.aws/
+.kube/
+
+# Build artifacts and dependencies
+node_modules/
+dist/
+build/
+target/
+out/
+coverage/
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs and caches
+logs/
+*.log
+*.cache
+.cache/
+.tmp/
+*.tmp
+
+# Tooling metadata
+.vscode/
+.idea/
+.DS_Store
+
+# Internal workspaces
+workspaces/
+venv/
+.venv/
+EOF
+  echo "seeded default .projectsanitize denylist at $sanitizer"
+}
+
 ensure_python_bin() {
   if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
     echo "warning: '$PYTHON_BIN' not found, falling back to python3" >&2
@@ -131,6 +181,7 @@ ensure_docker_setup() {
 }
 
 run_setup() {
+  ensure_projectsanitize
   ensure_python_env
   ensure_node_env
   ensure_docker_setup

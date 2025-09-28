@@ -131,7 +131,10 @@ class PatLifecycleTests(unittest.TestCase):
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
-            entries = logs_resp.json().get("entries", [])
+            snapshot_payload = logs_resp.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "failed")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(entries)
             self.assertTrue(any("Pending task failed" in entry for entry in entries))
 

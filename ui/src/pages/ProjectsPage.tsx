@@ -1,0 +1,759 @@
+import {
+  Dispatch,
+  FormEvent,
+  KeyboardEvent,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { getPatStatus, initialPatStatus } from '../api/integrations';
+import { useProjects } from '../hooks/useProjectsData';
+import {
+  Project,
+  ProjectAllowlistStatus,
+  ProjectCreatePayload,
+  ProjectUpdatePayload,
+} from '../types';
+import { formatTimestamp } from '../utils/time';
+
+type ProjectFormState = {
+  name: string;
+  local_path: string;
+  default_branch: string;
+  gitlab_host: string;
+  gitlab_project_path: string;
+  codex_token: string;
+};
+
+type FormErrors = Partial<Record<keyof ProjectFormState, string>>;
+
+type SortKey =
+  | 'name'
+  | 'gitlab_host'
+  | 'default_branch'
+  | 'allowlist_status'
+  | 'active_task_count'
+  | 'last_task_at';
+
+const initialFormState: ProjectFormState = {
+  name: '',
+  local_path: '',
+  default_branch: 'main',
+  gitlab_host: 'https://gitlab.com',
+  gitlab_project_path: '',
+  codex_token: '',
+};
+
+const allowlistOrder: Record<ProjectAllowlistStatus, number> = {
+  custom: 0,
+  empty: 1,
+  unknown: 2,
+};
+
+function normalizeHost(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.replace(/\/+$/, '');
+}
+
+function normalizeProjectPath(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.replace(/^\/+/, '');
+}
+
+function validateField(field: keyof ProjectFormState, value: string): string | null {
+  const trimmed = value.trim();
+  switch (field) {
+    case 'name':
+      return trimmed ? null : 'Name is required';
+    case 'local_path':
+      return trimmed ? null : 'Local path is required';
+    case 'default_branch':
+      if (!trimmed) {
+        return 'Default branch is required';
+      }
+      if (/\s/.test(trimmed)) {
+        return 'Branch cannot contain spaces';
+      }
+      if (trimmed.startsWith('-')) {
+        return 'Branch cannot start with a dash';
+      }
+      if (trimmed.endsWith('.') || trimmed.endsWith(' ')) {
+        return 'Branch cannot end with a dot or space';
+      }
+      if (trimmed.endsWith('.lock')) {
+        return 'Branch cannot end with .lock';
+      }
+      return null;
+    case 'gitlab_host':
+      if (!trimmed) {
+        return 'GitLab host is required';
+      }
+      try {
+        const parsed = new URL(trimmed);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          return 'GitLab host must start with http or https';
+        }
+      } catch (error) {
+        return 'Enter a valid GitLab host URL';
+      }
+      return null;
+    case 'gitlab_project_path':
+      if (!trimmed) {
+        return 'GitLab project path is required';
+      }
+      if (/\s/.test(trimmed)) {
+        return 'Project path cannot include spaces';
+      }
+      return null;
+    default:
+      return null;
+  }
+}
+
+function ProjectsPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const {
+    projects,
+    isLoading,
+    error: projectsError,
+    createProject,
+    updateProject,
+    deleteProject,
+  } = useProjects();
+
+  const [patStatus, setPatStatus] = useState(initialPatStatus);
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const [createForm, setCreateForm] = useState<ProjectFormState>(initialFormState);
+  const [createErrors, setCreateErrors] = useState<FormErrors>({});
+  const [createSubmitting, setCreateSubmitting] = useState(false);
+
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [editForm, setEditForm] = useState<ProjectFormState>(initialFormState);
+  const [editErrors, setEditErrors] = useState<FormErrors>({});
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [clearCodexToken, setClearCodexToken] = useState(false);
+
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCredentials = async () => {
+      try {
+        const status = await getPatStatus();
+        if (!cancelled) {
+          setPatStatus(status);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPageError((prev) => prev ?? 'Failed to load credential status');
+        }
+      }
+    };
+
+    void loadCredentials();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!editingProject) {
+      setEditForm(initialFormState);
+      setEditErrors({});
+      setClearCodexToken(false);
+    }
+  }, [editingProject]);
+
+  const sortedProjects = useMemo(() => {
+    const items = [...projects];
+    const multiplier = sortDirection === 'asc' ? 1 : -1;
+
+    items.sort((a, b) => {
+      const left = a;
+      const right = b;
+      switch (sortKey) {
+        case 'name':
+          return left.name.localeCompare(right.name) * multiplier;
+        case 'gitlab_host':
+          return (left.gitlab_host || '').localeCompare(right.gitlab_host || '') * multiplier;
+        case 'default_branch':
+          return (left.default_branch || '').localeCompare(right.default_branch || '') * multiplier;
+        case 'allowlist_status': {
+          const weightLeft = allowlistOrder[left.allowlist_status] ?? 99;
+          const weightRight = allowlistOrder[right.allowlist_status] ?? 99;
+          if (weightLeft === weightRight) {
+            return left.name.localeCompare(right.name) * multiplier;
+          }
+          return (weightLeft - weightRight) * multiplier;
+        }
+        case 'active_task_count':
+          return (left.active_task_count - right.active_task_count) * multiplier;
+        case 'last_task_at': {
+          const leftTime = left.last_task_at ? Date.parse(left.last_task_at) : 0;
+          const rightTime = right.last_task_at ? Date.parse(right.last_task_at) : 0;
+          if (leftTime === rightTime) {
+            return left.name.localeCompare(right.name) * multiplier;
+          }
+          return (leftTime - rightTime) * multiplier;
+        }
+        default:
+          return 0;
+      }
+    });
+
+    return items;
+  }, [projects, sortDirection, sortKey]);
+
+  const combinedError = pageError || projectsError;
+
+  const updateFieldError = (
+    field: keyof ProjectFormState,
+    value: string,
+    setErrors: Dispatch<SetStateAction<FormErrors>>,
+  ) => {
+    const validation = validateField(field, value);
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (validation) {
+        next[field] = validation;
+      } else {
+        delete next[field];
+      }
+      return next;
+    });
+  };
+
+  const handleCreateChange = (field: keyof ProjectFormState, value: string) => {
+    setCreateForm((prev) => ({ ...prev, [field]: value }));
+    updateFieldError(field, value, setCreateErrors);
+  };
+
+  const handleEditChange = (field: keyof ProjectFormState, value: string) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
+    updateFieldError(field, value, setEditErrors);
+    if (field === 'codex_token' && value.trim()) {
+      setClearCodexToken(false);
+    }
+  };
+
+  const runValidation = (form: ProjectFormState): FormErrors => {
+    const next: FormErrors = {};
+    (Object.keys(form) as Array<keyof ProjectFormState>).forEach((field) => {
+      const message = validateField(field, form[field]);
+      if (message) {
+        next[field] = message;
+      }
+    });
+    return next;
+  };
+
+  const handleCreateSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPageError(null);
+    setSuccessMessage(null);
+
+    const errors = runValidation(createForm);
+    if (Object.keys(errors).length > 0) {
+      setCreateErrors(errors);
+      setPageError('Fix the highlighted fields before continuing');
+      return;
+    }
+
+    const payload: ProjectCreatePayload = {
+      name: createForm.name.trim(),
+      local_path: createForm.local_path.trim(),
+      default_branch: createForm.default_branch.trim(),
+      gitlab_host: normalizeHost(createForm.gitlab_host),
+      gitlab_project_path: normalizeProjectPath(createForm.gitlab_project_path),
+      codex_token: createForm.codex_token.trim() ? createForm.codex_token.trim() : null,
+    };
+
+    setCreateSubmitting(true);
+    try {
+      await createProject(payload);
+      setCreateForm(initialFormState);
+      setCreateErrors({});
+      setSuccessMessage('Project registered successfully.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to register project';
+      setPageError(message);
+    } finally {
+      setCreateSubmitting(false);
+    }
+  };
+
+  const handleEditSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!editingProject) {
+      return;
+    }
+
+    setPageError(null);
+    setSuccessMessage(null);
+
+    const errors = runValidation(editForm);
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      setPageError('Fix the highlighted fields before continuing');
+      return;
+    }
+
+    const payload: ProjectUpdatePayload = {
+      name: editForm.name.trim(),
+      local_path: editForm.local_path.trim(),
+      default_branch: editForm.default_branch.trim(),
+      gitlab_host: normalizeHost(editForm.gitlab_host),
+      gitlab_project_path: normalizeProjectPath(editForm.gitlab_project_path),
+    };
+
+    const trimmedToken = editForm.codex_token.trim();
+    if (trimmedToken) {
+      payload.codex_token = trimmedToken;
+    } else if (clearCodexToken) {
+      payload.clear_codex_token = true;
+    }
+
+    setEditSubmitting(true);
+    try {
+      await updateProject(editingProject.id, payload);
+      setSuccessMessage('Project updated successfully.');
+      setEditingProject(null);
+      setEditForm(initialFormState);
+      setEditErrors({});
+      setClearCodexToken(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update project';
+      setPageError(message);
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  const handleEditSelect = useCallback((project: Project) => {
+    setEditingProject(project);
+    setEditForm({
+      name: project.name,
+      local_path: project.local_path,
+      default_branch: project.default_branch,
+      gitlab_host: project.gitlab_host,
+      gitlab_project_path: project.gitlab_project_path,
+      codex_token: '',
+    });
+    setEditErrors({});
+    setClearCodexToken(false);
+    setPageError(null);
+    setSuccessMessage(null);
+  }, []);
+
+  useEffect(() => {
+    const state = location.state as { editProjectId?: number } | null;
+    if (!state?.editProjectId) {
+      return;
+    }
+    const match = projects.find((project) => project.id === state.editProjectId);
+    if (match) {
+      handleEditSelect(match);
+    }
+    navigate('.', { replace: true, state: {} });
+  }, [handleEditSelect, location.state, navigate, projects]);
+
+  const handleEditCancel = () => {
+    setEditingProject(null);
+    setEditForm(initialFormState);
+    setEditErrors({});
+    setClearCodexToken(false);
+  };
+
+  const handleDelete = (project: Project) => {
+    setDeleteTarget(project);
+    setDeleteError(null);
+    setPageError(null);
+    setSuccessMessage(null);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+    setDeleteSubmitting(true);
+    setDeleteError(null);
+    try {
+      await deleteProject(deleteTarget.id);
+      setSuccessMessage(`Deleted project ${deleteTarget.name}.`);
+      setDeleteTarget(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete project';
+      setDeleteError(message);
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  };
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderCredentialBadge = (project: Project) => {
+    if (project.codex_token_configured) {
+      return (
+        <div className="table-status">
+          <span className="status status-done">Project token</span>
+          {project.codex_token_updated_at ? (
+            <div className="meta">Updated {formatTimestamp(project.codex_token_updated_at)}</div>
+          ) : null}
+        </div>
+      );
+    }
+    if (patStatus.session_configured) {
+      return (
+        <div className="table-status">
+          <span className="status status-running">Session bundle</span>
+          {patStatus.session_updated_at ? (
+            <div className="meta">Imported {formatTimestamp(patStatus.session_updated_at)}</div>
+          ) : null}
+        </div>
+      );
+    }
+    return <span className="status status-failed">Missing</span>;
+  };
+
+  const renderAllowlistBadge = (status: ProjectAllowlistStatus) => {
+    if (status === 'custom') {
+      return <span className="status status-done">Custom entries</span>;
+    }
+    if (status === 'empty') {
+      return <span className="status status-pending">Empty</span>;
+    }
+    return <span className="status status-running">No runs yet</span>;
+  };
+
+  const sortIndicator = (key: SortKey) => {
+    if (key !== sortKey) {
+      return null;
+    }
+    return sortDirection === 'asc' ? ' ▲' : ' ▼';
+  };
+
+  const sortableHeaderProps = (key: SortKey) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    onClick: () => toggleSort(key),
+    onKeyDown: (event: KeyboardEvent<HTMLTableCellElement>) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleSort(key);
+      }
+    },
+  });
+
+  return (
+    <div className="page">
+      <header className="page-header">
+        <h2>Projects</h2>
+        <p>Register repositories, inspect recent activity, and manage runner credentials.</p>
+      </header>
+
+      {combinedError && <div className="error-banner">{combinedError}</div>}
+      {successMessage && <div className="notice notice-success">{successMessage}</div>}
+
+      <div className="panel-grid">
+        <form className="form" onSubmit={handleCreateSubmit} noValidate>
+          <h3>Register Project</h3>
+          <label>
+            Name
+            <input
+              type="text"
+              value={createForm.name}
+              onChange={(event) => handleCreateChange('name', event.target.value)}
+              required
+            />
+            {createErrors.name ? <span className="status status-failed">{createErrors.name}</span> : null}
+          </label>
+          <label>
+            Local Path
+            <input
+              type="text"
+              value={createForm.local_path}
+              onChange={(event) => handleCreateChange('local_path', event.target.value)}
+              required
+            />
+            {createErrors.local_path ? <span className="status status-failed">{createErrors.local_path}</span> : null}
+          </label>
+          <label>
+            Default Branch
+            <input
+              type="text"
+              value={createForm.default_branch}
+              onChange={(event) => handleCreateChange('default_branch', event.target.value)}
+              required
+            />
+            {createErrors.default_branch ? (
+              <span className="status status-failed">{createErrors.default_branch}</span>
+            ) : null}
+          </label>
+          <label>
+            GitLab Host
+            <input
+              type="text"
+              value={createForm.gitlab_host}
+              onChange={(event) => handleCreateChange('gitlab_host', event.target.value)}
+              required
+            />
+            {createErrors.gitlab_host ? <span className="status status-failed">{createErrors.gitlab_host}</span> : null}
+          </label>
+          <label>
+            GitLab Project Path
+            <input
+              type="text"
+              value={createForm.gitlab_project_path}
+              onChange={(event) => handleCreateChange('gitlab_project_path', event.target.value)}
+              required
+            />
+            {createErrors.gitlab_project_path ? (
+              <span className="status status-failed">{createErrors.gitlab_project_path}</span>
+            ) : null}
+          </label>
+          <label>
+            Codex API Token (optional)
+            <input
+              type="password"
+              value={createForm.codex_token}
+              onChange={(event) => handleCreateChange('codex_token', event.target.value)}
+              placeholder="sk-..."
+            />
+          </label>
+          <button type="submit" disabled={createSubmitting}>
+            {createSubmitting ? 'Registering…' : 'Register Project'}
+          </button>
+        </form>
+
+        <div className="panel">
+          <h3>Project Overview</h3>
+          <div className="table-wrapper">
+            {projects.length === 0 ? (
+              <p className="empty">{isLoading ? 'Loading projects…' : 'No projects registered yet.'}</p>
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th {...sortableHeaderProps('name')}>
+                      Name{sortIndicator('name')}
+                    </th>
+                    <th>Repository</th>
+                    <th {...sortableHeaderProps('gitlab_host')}>
+                      Host{sortIndicator('gitlab_host')}
+                    </th>
+                    <th {...sortableHeaderProps('default_branch')}>
+                      Default Branch{sortIndicator('default_branch')}
+                    </th>
+                    <th {...sortableHeaderProps('allowlist_status')}>
+                      Allowlist{sortIndicator('allowlist_status')}
+                    </th>
+                    <th>Credentials</th>
+                    <th {...sortableHeaderProps('last_task_at')}>
+                      Last Activity{sortIndicator('last_task_at')}
+                    </th>
+                    <th {...sortableHeaderProps('active_task_count')}>
+                      Active Tasks{sortIndicator('active_task_count')}
+                    </th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedProjects.map((project) => (
+                    <tr key={project.id}>
+                      <td>{project.name}</td>
+                      <td>
+                        {project.repository_url ? (
+                          <a href={project.repository_url} target="_blank" rel="noreferrer">
+                            {project.repository_url}
+                          </a>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>{project.gitlab_host || '—'}</td>
+                      <td>{project.default_branch}</td>
+                      <td>{renderAllowlistBadge(project.allowlist_status)}</td>
+                      <td>{renderCredentialBadge(project)}</td>
+                      <td>
+                        {project.last_task_at ? (
+                          <div className="table-status">
+                            <span className={`status status-${project.last_task_status ?? 'pending'}`}>
+                              {project.last_task_status ?? 'unknown'}
+                            </span>
+                            <div className="meta">{formatTimestamp(project.last_task_at)}</div>
+                          </div>
+                        ) : (
+                          <span className="meta">No tasks yet</span>
+                        )}
+                      </td>
+                      <td>{project.active_task_count}</td>
+                      <td>
+                        <div className="button-row">
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => navigate(`/projects/${project.id}`)}
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => handleEditSelect(project)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
+                            onClick={() => handleDelete(project)}
+                            disabled={project.active_task_count > 0}
+                            title={
+                              project.active_task_count > 0
+                                ? 'Abort or complete active tasks before deleting'
+                                : undefined
+                            }
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {editingProject ? (
+        <form className="panel form" onSubmit={handleEditSubmit} noValidate>
+          <h3>Edit Project – {editingProject.name}</h3>
+          <label>
+            Name
+            <input
+              type="text"
+              value={editForm.name}
+              onChange={(event) => handleEditChange('name', event.target.value)}
+              required
+            />
+            {editErrors.name ? <span className="status status-failed">{editErrors.name}</span> : null}
+          </label>
+          <label>
+            Local Path
+            <input
+              type="text"
+              value={editForm.local_path}
+              onChange={(event) => handleEditChange('local_path', event.target.value)}
+              required
+            />
+            {editErrors.local_path ? <span className="status status-failed">{editErrors.local_path}</span> : null}
+          </label>
+          <label>
+            Default Branch
+            <input
+              type="text"
+              value={editForm.default_branch}
+              onChange={(event) => handleEditChange('default_branch', event.target.value)}
+              required
+            />
+            {editErrors.default_branch ? (
+              <span className="status status-failed">{editErrors.default_branch}</span>
+            ) : null}
+          </label>
+          <label>
+            GitLab Host
+            <input
+              type="text"
+              value={editForm.gitlab_host}
+              onChange={(event) => handleEditChange('gitlab_host', event.target.value)}
+              required
+            />
+            {editErrors.gitlab_host ? <span className="status status-failed">{editErrors.gitlab_host}</span> : null}
+          </label>
+          <label>
+            GitLab Project Path
+            <input
+              type="text"
+              value={editForm.gitlab_project_path}
+              onChange={(event) => handleEditChange('gitlab_project_path', event.target.value)}
+              required
+            />
+            {editErrors.gitlab_project_path ? (
+              <span className="status status-failed">{editErrors.gitlab_project_path}</span>
+            ) : null}
+          </label>
+          <label>
+            Update Codex API Token (optional)
+            <input
+              type="password"
+              value={editForm.codex_token}
+              onChange={(event) => handleEditChange('codex_token', event.target.value)}
+              placeholder={editingProject.codex_token_configured ? 'Enter new token to rotate' : 'sk-...'}
+            />
+          </label>
+          {editingProject.codex_token_configured ? (
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={clearCodexToken}
+                onChange={(event) => setClearCodexToken(event.target.checked)}
+                disabled={Boolean(editForm.codex_token.trim())}
+              />
+              <span>Clear stored Codex token for this project</span>
+            </label>
+          ) : null}
+          <div className="button-row">
+            <button type="submit" disabled={editSubmitting}>
+              {editSubmitting ? 'Saving…' : 'Save Changes'}
+            </button>
+            <button type="button" className="ghost-button" onClick={handleEditCancel}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="panel">
+          <h3>Delete Project</h3>
+          <p>
+            Remove <strong>{deleteTarget.name}</strong> from the runner? Completed task logs will remain
+            available, but future runs will no longer reference this project.
+          </p>
+          {deleteError && <div className="error-banner">{deleteError}</div>}
+          <div className="button-row">
+            <button type="button" onClick={confirmDelete} disabled={deleteSubmitting}>
+              {deleteSubmitting ? 'Deleting…' : 'Confirm Deletion'}
+            </button>
+            <button type="button" className="ghost-button" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default ProjectsPage;

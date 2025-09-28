@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Event, Thread
 from typing import Callable, Iterable, Optional
 
 import base64
@@ -42,10 +44,15 @@ class CodexResult:
     mr_url: Optional[str] = None
     agent_version: Optional[str] = None
     invocation_flags: list[str] = field(default_factory=list)
+    codex_model: Optional[str] = None
 
 
 class CodexRunnerError(RuntimeError):
     """Raised when the codex execution fails before producing an exit code."""
+
+
+class CodexRunnerAborted(CodexRunnerError):
+    """Raised when codex execution is terminated due to an abort request."""
 
 
 def run_codex(
@@ -62,7 +69,9 @@ def run_codex(
     branch_name: str,
     mr_title: str,
     task_id: int,
+    codex_model: Optional[str] = None,
     log_fn: Optional[Callable[[str], None]] = None,
+    abort_event: Optional[Event] = None,
 ) -> CodexResult:
     """Execute the placeholder codex workflow, preferring Docker when available."""
     allowlist = list(allowlist or [])
@@ -112,9 +121,22 @@ def run_codex(
 
     runner_env.update(proxy_environment())
 
+    if codex_model:
+        runner_env["CODEX_MODEL_ID"] = codex_model
+
     if os.environ.get("RUNNER_DISABLE_DOCKER", "0") == "1":
-        exit_code = _run_local_stub(workspace, prompt, allowlist, runner_env, log_fn)
-        result_branch, mr_url = _load_finish_metadata(result_path, log_fn) if exit_code == 0 else (None, None)
+        exit_code = _run_local_stub(
+            workspace,
+            prompt,
+            allowlist,
+            runner_env,
+            log_fn,
+            abort_event=abort_event,
+        )
+        if exit_code == 0:
+            result_branch, mr_url, result_model = _load_finish_metadata(result_path, log_fn)
+        else:
+            result_branch, mr_url, result_model = None, None, None
         agent_version, flags = _load_metadata(metadata_path, log_fn)
         return CodexResult(
             exit_code=exit_code,
@@ -123,18 +145,38 @@ def run_codex(
             mr_url=mr_url,
             agent_version=agent_version,
             invocation_flags=flags,
+            codex_model=result_model or codex_model,
         )
 
     try:
-        exit_code = _run_in_docker(workspace, prompt, allowlist, runner_env, log_fn)
+        exit_code = _run_in_docker(
+            workspace,
+            prompt,
+            allowlist,
+            runner_env,
+            log_fn,
+            abort_event=abort_event,
+        )
+    except CodexRunnerAborted:
+        raise
     except (DockerException, CodexRunnerError) as exc:
         if log_fn:
             log_fn(f"Docker unavailable or failed ({exc}); using local stub")
-        exit_code = _run_local_stub(workspace, prompt, allowlist, runner_env, log_fn)
+        exit_code = _run_local_stub(
+            workspace,
+            prompt,
+            allowlist,
+            runner_env,
+            log_fn,
+            abort_event=abort_event,
+        )
         used_docker = False
     else:
         used_docker = True
-    result_branch, mr_url = _load_finish_metadata(result_path, log_fn) if exit_code == 0 else (None, None)
+    if exit_code == 0:
+        result_branch, mr_url, result_model = _load_finish_metadata(result_path, log_fn)
+    else:
+        result_branch, mr_url, result_model = None, None, None
     agent_version, flags = _load_metadata(metadata_path, log_fn)
     return CodexResult(
         exit_code=exit_code,
@@ -143,6 +185,7 @@ def run_codex(
         mr_url=mr_url,
         agent_version=agent_version,
         invocation_flags=flags,
+        codex_model=result_model or codex_model,
     )
 
 
@@ -152,6 +195,7 @@ def _run_in_docker(
     allowlist: Iterable[str],
     runner_env: dict[str, str],
     log_fn: Optional[Callable[[str], None]],
+    abort_event: Optional[Event],
 ) -> int:
     if not RUNNER_CONTEXT.exists():
         raise CodexRunnerError("Runner build context is missing")
@@ -211,22 +255,64 @@ def _run_in_docker(
             raise
     try:
         container.start()
-        for raw in container.logs(stream=True, follow=True):
-            if log_fn:
-                log_fn(raw.decode("utf-8", errors="ignore").rstrip())
-        result = container.wait()
+
+        def _stream_logs() -> None:
+            try:
+                for raw in container.logs(stream=True, follow=True):
+                    if log_fn:
+                        log_fn(raw.decode("utf-8", errors="ignore").rstrip())
+            except Exception:
+                # Streaming ends when the container exits or the API disconnects.
+                pass
+
+        log_thread = Thread(target=_stream_logs, name="codex-log-stream", daemon=True)
+        log_thread.start()
+
+        aborted = False
+        while True:
+            if abort_event is not None and abort_event.is_set():
+                aborted = True
+                if log_fn:
+                    log_fn("docker: abort requested; stopping container")
+                try:
+                    container.stop(timeout=5)
+                except APIError as exc:
+                    if log_fn:
+                        log_fn(f"docker: failed to stop container cleanly ({exc})")
+                break
+            try:
+                container.reload()
+            except APIError:
+                break
+            state = container.attrs.get("State", {}) or {}
+            if state.get("Status") != "running":
+                break
+            time.sleep(0.5)
+
+        try:
+            result = container.wait(timeout=5)
+        except TypeError:
+            result = container.wait()
+        except APIError:
+            result = {"StatusCode": container.attrs.get("State", {}).get("ExitCode", 1)}
+
+        if log_thread.is_alive():
+            log_thread.join(timeout=2)
+
+        if aborted:
+            raise CodexRunnerAborted("Abort requested during docker execution")
+
         exit_code = int(result.get("StatusCode", 1))
         if log_fn:
             error_message = result.get("Error")
             if error_message:
                 log_fn(f"docker: container error reported: {error_message}")
-        state: dict[str, object] = {}
+
         try:
             container.reload()
+            state = container.attrs.get("State", {})
         except Exception:
             state = {}
-        else:
-            state = container.attrs.get("State", {})
         if log_fn and state:
             if state.get("OOMKilled"):
                 log_fn("docker: runner terminated due to OOM (mem_limit active)")
@@ -257,6 +343,7 @@ def _run_finish_task_local(
     workspace: Path,
     env: dict[str, str],
     log_fn: Optional[Callable[[str], None]],
+    abort_event: Optional[Event],
 ) -> int:
     script_path = workspace / "runner" / "bin" / "finish_task.sh"
     if not script_path.exists():
@@ -270,26 +357,54 @@ def _run_finish_task_local(
     except OSError:
         pass
 
-    process = subprocess.run(
+    process = subprocess.Popen(
         [str(script_path)],
         cwd=str(workspace),
-        check=False,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         env=env,
     )
 
-    if log_fn and process.stdout:
-        for line in process.stdout.splitlines():
+    while True:
+        return_code = process.poll()
+        if return_code is not None:
+            break
+        if abort_event is not None and abort_event.is_set():
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            raise CodexRunnerAborted("Abort requested during finish_task")
+        time.sleep(0.2)
+
+    if process.stdout:
+        stdout_text = process.stdout.read()
+        process.stdout.close()
+    else:
+        stdout_text = ""
+    if process.stderr:
+        stderr_text = process.stderr.read()
+        process.stderr.close()
+    else:
+        stderr_text = ""
+
+    if log_fn and stdout_text:
+        for line in stdout_text.splitlines():
             log_fn(line)
-    if log_fn and process.stderr:
-        for line in process.stderr.splitlines():
+    if log_fn and stderr_text:
+        for line in stderr_text.splitlines():
             log_fn(f"stderr: {line}")
 
-    return process.returncode
+    return process.returncode if process.returncode is not None else 1
 
 
-def _load_finish_metadata(result_path: Path, log_fn: Optional[Callable[[str], None]]) -> tuple[Optional[str], Optional[str]]:
+def _load_finish_metadata(
+    result_path: Path,
+    log_fn: Optional[Callable[[str], None]],
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
     if not result_path.exists():
         if log_fn:
             log_fn(f"finish_task metadata not found at {result_path}")
@@ -305,7 +420,8 @@ def _load_finish_metadata(result_path: Path, log_fn: Optional[Callable[[str], No
 
     branch = data.get("branch")
     mr_url = data.get("mr_url")
-    return branch, mr_url
+    codex_model = data.get("codex_model") or None
+    return branch, mr_url, codex_model
 
 
 def _load_metadata(metadata_path: Path, log_fn: Optional[Callable[[str], None]]) -> tuple[Optional[str], list[str]]:
@@ -338,6 +454,8 @@ def _run_local_stub(
     allowlist: Iterable[str],
     runner_env: dict[str, str],
     log_fn: Optional[Callable[[str], None]],
+    *,
+    abort_event: Optional[Event],
 ) -> int:
     runner_path = workspace / "runner" / "bin" / "codex"
     if not runner_path.exists():
@@ -364,25 +482,61 @@ def _run_local_stub(
 
     invocation = [str(runner_path), "exec", "--cd", str(workspace), *flags, "-"]
 
-    process = subprocess.run(
+    process = subprocess.Popen(
         invocation,
         cwd=str(workspace),
-        check=False,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         env=env,
-        input=prompt,
     )
 
-    if log_fn and process.stdout:
-        for line in process.stdout.splitlines():
+    if process.stdin:
+        try:
+            process.stdin.write(prompt)
+            process.stdin.flush()
+        finally:
+            process.stdin.close()
+
+    while True:
+        return_code = process.poll()
+        if return_code is not None:
+            break
+        if abort_event is not None and abort_event.is_set():
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            raise CodexRunnerAborted("Abort requested during codex execution")
+        time.sleep(0.2)
+
+    if process.stdout:
+        stdout_text = process.stdout.read()
+        process.stdout.close()
+    else:
+        stdout_text = ""
+    if process.stderr:
+        stderr_text = process.stderr.read()
+        process.stderr.close()
+    else:
+        stderr_text = ""
+
+    if log_fn and stdout_text:
+        for line in stdout_text.splitlines():
             log_fn(line)
-    if log_fn and process.stderr:
-        for line in process.stderr.splitlines():
+    if log_fn and stderr_text:
+        for line in stderr_text.splitlines():
             log_fn(f"stderr: {line}")
 
-    if process.returncode != 0:
-        return process.returncode
+    exit_code = process.returncode if process.returncode is not None else 1
+    if exit_code != 0:
+        return exit_code
 
-    finish_code = _run_finish_task_local(workspace, env, log_fn)
+    if abort_event is not None and abort_event.is_set():
+        raise CodexRunnerAborted("Abort requested before finish_task")
+
+    finish_code = _run_finish_task_local(workspace, env, log_fn, abort_event=abort_event)
     return finish_code

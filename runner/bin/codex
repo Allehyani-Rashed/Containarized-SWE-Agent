@@ -86,10 +86,12 @@ def _run_placeholder(workspace: Path, output_dir: Path) -> int:
     change_log = output_dir / CHANGELOG_FILENAME
     timestamp = datetime.now(timezone.utc).isoformat()
     prompt = os.environ.get("CODEX_PROMPT", "<no prompt provided>")
+    model = os.environ.get("CODEX_MODEL_ID", "<default>")
 
     with change_log.open("a", encoding="utf-8") as handle:
         handle.write(f"{timestamp}: codex placeholder executed\n")
         handle.write(f"prompt: {prompt}\n\n")
+        handle.write(f"model: {model}\n\n")
 
     print(f"codex placeholder wrote change log at {change_log}")
     summary_path = output_dir / DEFAULT_OUTPUT_FILENAME
@@ -119,6 +121,9 @@ def _write_metadata(workspace: Path, flags: Iterable[str]) -> None:
         "mode": "stub",
         "flags": list(flags),
     }
+    model = os.environ.get("CODEX_MODEL_ID")
+    if model:
+        payload["model"] = model
     metadata_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 
 

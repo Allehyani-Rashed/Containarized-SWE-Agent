@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Sequence
 
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from .allowlist import normalize_user_allowlist
+from .codex_models import iter_models, valid_model_ids
 from .database import engine, get_session, init_db
-from .models import Project, Task, TaskStatus
+from .models import AuditLog, Project, Task, TaskStatus
 from .integrations import (
     ChatGPTSessionError,
     GitLabPATVerificationError,
@@ -24,14 +30,22 @@ from .integrations import (
 from .schemas import (
     ChatGPTSessionClearRequest,
     ChatGPTSessionImportRequest,
+    CodexModelSummary,
     GitLabPATClearRequest,
     GitLabPATRotateRequest,
     GitLabPATStatus,
     GitLabPATVerifyRequest,
     ProjectCreate,
+    ProjectDeleteRequest,
+    ProjectDetail,
     ProjectRead,
+    ProjectTaskSummary,
+    ProjectUpdate,
+    TaskAbortRequest,
     TaskCreate,
+    TaskDeleteRequest,
     TaskLogSnapshot,
+    TaskListResponse,
     TaskRead,
 )
 from .secrets import get_secret_manager
@@ -48,6 +62,146 @@ def get_worker() -> TaskQueueManager:
 
 def get_worker_optional() -> TaskQueueManager | None:
     return _worker
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WORKSPACES_ROOT = REPO_ROOT / "workspaces"
+
+
+def _record_audit_event(session: Session, action: str, actor: str | None, details: str | None) -> None:
+    entry = AuditLog(action=action, actor=actor, details=details)
+    session.add(entry)
+
+
+def _normalize_actor(actor: str | None) -> str | None:
+    if actor is None:
+        return None
+    actor = actor.strip()
+    return actor or None
+
+
+def _normalize_reason(reason: str | None) -> str | None:
+    if reason is None:
+        return None
+    value = reason.strip()
+    return value or None
+
+
+def _remove_workspace(path_str: str | None) -> None:
+    if not path_str:
+        return
+    try:
+        candidate = Path(path_str).resolve()
+    except OSError:
+        return
+    try:
+        workspace_root = WORKSPACES_ROOT.resolve()
+    except OSError:
+        return
+    try:
+        candidate.relative_to(workspace_root)
+    except ValueError:
+        return
+    if candidate.is_dir():
+        shutil.rmtree(candidate, ignore_errors=True)
+    else:
+        try:
+            candidate.unlink()
+        except OSError:
+            pass
+
+
+def _build_repository_url(project: Project) -> str:
+    host = (project.gitlab_host or "").rstrip("/")
+    path = (project.gitlab_project_path or "").lstrip("/")
+    if not host:
+        return path
+    if not path:
+        return host
+    return f"{host}/{path}"
+
+
+def _derive_last_activity(task: Task | None) -> datetime | None:
+    if task is None:
+        return None
+    for candidate in (task.finished_at, task.started_at, task.created_at):
+        if candidate is not None:
+            return candidate
+    return None
+
+
+def _derive_allowlist_status(task: Task | None) -> str:
+    if task is None:
+        return "unknown"
+    allowlist = task.allowlist or []
+    return "custom" if allowlist else "empty"
+
+
+def _collect_project_metrics(
+    session: Session,
+    projects: Sequence[Project],
+) -> Dict[int, Dict[str, Any]]:
+    metrics: Dict[int, Dict[str, Any]] = {}
+    project_ids = [project.id for project in projects if project.id is not None]
+    for project in projects:
+        if project.id is None:
+            continue
+        metrics[project.id] = {
+            "last_task_at": None,
+            "last_task_status": None,
+            "allowlist_status": "unknown",
+            "active_task_count": 0,
+            "total_task_count": 0,
+        }
+
+    if not project_ids:
+        return metrics
+
+    total_counts = session.exec(
+        select(Task.project_id, func.count(Task.id))
+        .where(Task.project_id.in_(project_ids))
+        .group_by(Task.project_id)
+    ).all()
+    for project_id, count in total_counts:
+        data = metrics.get(project_id)
+        if data is not None:
+            data["total_task_count"] = int(count or 0)
+
+    active_counts = session.exec(
+        select(Task.project_id, func.count(Task.id))
+        .where(
+            Task.project_id.in_(project_ids),
+            Task.status.in_([TaskStatus.pending, TaskStatus.running]),
+        )
+        .group_by(Task.project_id)
+    ).all()
+    for project_id, count in active_counts:
+        data = metrics.get(project_id)
+        if data is not None:
+            data["active_task_count"] = int(count or 0)
+
+    recent_tasks = session.exec(
+        select(Task)
+        .where(Task.project_id.in_(project_ids))
+        .order_by(Task.project_id, Task.created_at.desc(), Task.id.desc())
+    ).all()
+
+    seen: set[int] = set()
+    for task in recent_tasks:
+        project_id = task.project_id
+        if project_id in seen:
+            continue
+        seen.add(project_id)
+        data = metrics.get(project_id)
+        if data is None:
+            continue
+        data["last_task_at"] = _derive_last_activity(task)
+        data["last_task_status"] = task.status
+        data["allowlist_status"] = _derive_allowlist_status(task)
+        if len(seen) == len(project_ids):
+            break
+
+    return metrics
 
 
 @asynccontextmanager
@@ -67,6 +221,59 @@ app = FastAPI(title="Containerized Codex Agent", lifespan=lifespan)
 
 
 integrations_router = APIRouter(prefix="/integrations", tags=["integrations"])
+
+
+_VALID_CODEX_MODEL_IDS = valid_model_ids()
+_BRANCH_FORBIDDEN_PATTERN = re.compile(r"[\s~^:?*\\[\\]\\x00-\\x1F\\x7F]")
+
+
+def _normalize_branch_name(raw: str) -> str:
+    branch = (raw or "").strip()
+    if not branch:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot be empty")
+    if branch in {".", ".."}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot be '.' or '..'")
+    if branch.startswith("/") or branch.endswith("/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot start or end with '/'")
+    if branch.startswith("-"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot start with '-'")
+    if branch.endswith(".") or branch.endswith(" "):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot end with '.' or space")
+    if branch.endswith(".lock"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot end with '.lock'")
+    if ".." in branch or "@{" in branch or "//" in branch:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name contains invalid sequences")
+    if branch.startswith("refs/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name cannot start with 'refs/'")
+    if _BRANCH_FORBIDDEN_PATTERN.search(branch):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name contains invalid characters")
+    if len(branch.encode("utf-8")) > 255:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name is too long (max 255 bytes)")
+
+    try:
+        subprocess.run(
+            ["git", "check-ref-format", "--branch", branch],
+            check=True,
+            capture_output=True,
+        )
+    except FileNotFoundError:
+        # Fallback validation already performed; continue without git binary.
+        return branch
+    except subprocess.CalledProcessError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Branch name is not a valid git reference") from exc
+
+    return branch
+
+
+def _normalize_codex_model(model_id: str | None) -> str | None:
+    if model_id is None:
+        return None
+    candidate = model_id.strip()
+    if not candidate:
+        return None
+    if candidate not in _VALID_CODEX_MODEL_IDS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown Codex model requested")
+    return candidate
 
 
 @integrations_router.get("/pat", response_model=GitLabPATStatus)
@@ -167,20 +374,37 @@ app.include_router(integrations_router)
 
 
 
-def _project_to_read(project: Project) -> ProjectRead:
+def _project_to_read(project: Project, extras: Dict[str, Any] | None = None) -> ProjectRead:
+    update_payload: Dict[str, Any] = {
+        "codex_token_configured": bool(project.codex_token_encrypted),
+        "codex_token_updated_at": project.codex_token_updated_at,
+        "repository_url": _build_repository_url(project),
+    }
+    if extras:
+        update_payload.update(extras)
     return ProjectRead.model_validate(
         project,
         from_attributes=True,
-        update={
-            "codex_token_configured": bool(project.codex_token_encrypted),
-            "codex_token_updated_at": project.codex_token_updated_at,
-        },
+        update=update_payload,
     )
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, bool]:
     return {"ok": True}
+
+
+@app.get("/models", response_model=List[CodexModelSummary])
+def list_codex_models() -> List[CodexModelSummary]:
+    return [
+        CodexModelSummary(
+            id=model.id,
+            label=model.label,
+            description=model.description,
+            is_default=model.is_default,
+        )
+        for model in iter_models()
+    ]
 
 
 @app.post("/projects", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
@@ -204,7 +428,163 @@ def create_project(
 @app.get("/projects", response_model=List[ProjectRead])
 def list_projects(session: Session = Depends(get_session)) -> List[ProjectRead]:
     projects = session.exec(select(Project).order_by(Project.id)).all()
-    return [_project_to_read(project) for project in projects]
+    metrics = _collect_project_metrics(session, projects)
+    return [
+        _project_to_read(project, metrics.get(project.id) if project.id is not None else None)
+        for project in projects
+    ]
+
+
+@app.get("/projects/{project_id}", response_model=ProjectDetail)
+def get_project_detail(project_id: int, session: Session = Depends(get_session)) -> ProjectDetail:
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    metrics = _collect_project_metrics(session, [project])
+    extras = metrics.get(project_id, {})
+
+    recent_rows = session.exec(
+        select(Task)
+        .where(Task.project_id == project_id)
+        .order_by(Task.created_at.desc())
+        .limit(10)
+    ).all()
+
+    recent_tasks = [
+        ProjectTaskSummary(
+            id=task.id,
+            status=task.status,
+            prompt=task.prompt,
+            branch=task.branch,
+            codex_model=task.codex_model,
+            created_at=task.created_at,
+            started_at=task.started_at,
+            finished_at=task.finished_at,
+            allowlist_size=len(task.allowlist or []),
+        )
+        for task in recent_rows
+    ]
+
+    summary = _project_to_read(project, extras)
+    payload = summary.model_dump()
+    payload["recent_tasks"] = recent_tasks
+    return ProjectDetail(**payload)
+
+
+@app.patch("/projects/{project_id}", response_model=ProjectRead)
+def update_project(
+    project_id: int,
+    payload: ProjectUpdate,
+    session: Session = Depends(get_session),
+) -> ProjectRead:
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    payload_data = payload.model_dump(exclude_unset=True)
+    actor = _normalize_actor(payload_data.pop("actor", None))
+    clear_codex_flag = bool(payload_data.pop("clear_codex_token", False))
+    _codex_marker = object()
+    codex_token_value = payload_data.pop("codex_token", _codex_marker)
+    codex_token_provided = codex_token_value is not _codex_marker
+
+    string_fields = {"name", "local_path", "default_branch", "gitlab_host", "gitlab_project_path"}
+    updated_fields: list[str] = []
+    for field, value in payload_data.items():
+        if field not in string_fields:
+            continue
+        if isinstance(value, str):
+            trimmed = value.strip()
+        else:
+            trimmed = value
+        if trimmed is None or (isinstance(trimmed, str) and not trimmed):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field.replace('_', ' ')} cannot be empty",
+            )
+        if getattr(project, field) != trimmed:
+            setattr(project, field, trimmed)
+            updated_fields.append(field)
+
+    manager = get_secret_manager()
+    codex_token_state = None
+    if codex_token_provided:
+        raw_value = (codex_token_value or "").strip()
+        if raw_value:
+            project.codex_token_encrypted = manager.encrypt(raw_value)
+            project.codex_token_updated_at = datetime.now(timezone.utc)
+            codex_token_state = "updated"
+        else:
+            project.codex_token_encrypted = None
+            project.codex_token_updated_at = None
+            codex_token_state = "cleared"
+    elif clear_codex_flag:
+        project.codex_token_encrypted = None
+        project.codex_token_updated_at = None
+        codex_token_state = "cleared"
+
+    session.add(project)
+
+    details_bits = [f"project_id={project_id}"]
+    if updated_fields:
+        details_bits.append(f"fields={','.join(updated_fields)}")
+    if codex_token_state:
+        details_bits.append(f"codex_token={codex_token_state}")
+    audit_details = ", ".join(details_bits)
+    if updated_fields or codex_token_state:
+        _record_audit_event(session, "project.updated", actor, audit_details)
+
+    session.commit()
+    session.refresh(project)
+
+    metrics = _collect_project_metrics(session, [project])
+    return _project_to_read(project, metrics.get(project_id))
+
+
+@app.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: int,
+    payload: ProjectDeleteRequest | None = Body(default=None),
+    session: Session = Depends(get_session),
+    worker: TaskQueueManager = Depends(get_worker),
+) -> Response:
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    active_count = session.exec(
+        select(func.count(Task.id)).where(
+            Task.project_id == project_id,
+            Task.status.in_([TaskStatus.pending, TaskStatus.running]),
+        )
+    ).one()
+    if active_count and int(active_count) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Project has running or pending tasks; abort them before deletion",
+        )
+
+    actor = _normalize_actor(payload.actor if payload else None)
+    audit_details = f"project_id={project_id}"
+
+    tasks = session.exec(select(Task).where(Task.project_id == project_id)).all()
+    task_ids = [task.id for task in tasks if task.id is not None]
+    workspaces = [task.workspace_path for task in tasks]
+
+    for task in tasks:
+        session.delete(task)
+
+    session.delete(project)
+    _record_audit_event(session, "project.deleted", actor, audit_details)
+    session.commit()
+
+    for task_id in task_ids:
+        worker.handle_task_deleted(task_id)
+    for path in workspaces:
+        _remove_workspace(path)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.post("/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
@@ -225,12 +605,16 @@ def create_task(
         )
 
     normalized_allowlist = normalize_user_allowlist(payload.allowlist or [])
+    branch_override = _normalize_branch_name(payload.branch_name) if payload.branch_name else None
+    codex_model = _normalize_codex_model(payload.codex_model)
 
     task = Task(
         project_id=payload.project_id,
         prompt=payload.prompt,
         allowlist=normalized_allowlist,
         status=TaskStatus.pending,
+        branch=branch_override,
+        codex_model=codex_model,
     )
     session.add(task)
     session.commit()
@@ -241,10 +625,66 @@ def create_task(
     return task
 
 
-@app.get("/tasks", response_model=List[TaskRead])
-def list_tasks(session: Session = Depends(get_session)) -> List[Task]:
-    tasks = session.exec(select(Task).order_by(Task.created_at.desc())).all()
-    return tasks
+@app.get("/tasks", response_model=TaskListResponse)
+def list_tasks(
+    session: Session = Depends(get_session),
+    statuses: str | None = Query(default=None, description="Comma-separated list of task statuses to include"),
+    codex_model: str | None = Query(default=None, description="Filter by Codex model identifier"),
+    branch: str | None = Query(default=None, description="Case-insensitive substring match on branch name"),
+    limit: int = Query(default=50, ge=1, le=200, description="Maximum number of tasks to return"),
+    offset: int = Query(default=0, ge=0, description="Number of matching tasks to skip"),
+) -> TaskListResponse:
+    filters = []
+
+    if statuses:
+        candidates = [value.strip() for value in statuses.split(",") if value.strip()]
+        statuses: set[TaskStatus] = set()
+        invalid: list[str] = []
+        for candidate in candidates:
+            try:
+                statuses.add(TaskStatus(candidate))
+            except ValueError:
+                invalid.append(candidate)
+        if invalid:
+            formatted = ", ".join(sorted(dict.fromkeys(invalid)))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid task status value(s): {formatted}",
+            )
+        if statuses:
+            filters.append(Task.status.in_(list(statuses)))
+
+    if codex_model:
+        filters.append(Task.codex_model == codex_model.strip())
+
+    if branch:
+        branch_query = branch.strip().lower()
+        if branch_query:
+            filters.append(Task.branch.is_not(None))
+            filters.append(func.lower(Task.branch).like(f"%{branch_query}%"))
+
+    base_query = select(Task)
+    if filters:
+        for clause in filters:
+            base_query = base_query.where(clause)
+
+    total_query = select(func.count()).select_from(base_query.subquery())
+    total = session.exec(total_query).one()
+
+    rows = session.exec(
+        base_query.order_by(Task.created_at.desc(), Task.id.desc()).offset(offset).limit(limit)
+    ).all()
+
+    items = [TaskRead.model_validate(row) for row in rows]
+    next_offset = offset + limit if offset + limit < total else None
+
+    return TaskListResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        next_offset=next_offset,
+    )
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRead)
@@ -252,6 +692,58 @@ def get_task(task_id: int, session: Session = Depends(get_session)) -> Task:
     task = session.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+    return task
+
+
+@app.post("/tasks/{task_id}/abort", response_model=TaskRead)
+def abort_task(
+    task_id: int,
+    payload: TaskAbortRequest | None = Body(default=None),
+    session: Session = Depends(get_session),
+    worker: TaskQueueManager = Depends(get_worker),
+) -> Task:
+    task = session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    if task.status in {TaskStatus.done, TaskStatus.failed, TaskStatus.aborted}:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Task already completed")
+
+    actor = _normalize_actor(payload.actor if payload else None)
+    reason = _normalize_reason(payload.reason if payload else None)
+    timestamp = datetime.now(timezone.utc)
+
+    message_bits: list[str] = ["Abort requested by operator"]
+    if actor:
+        message_bits.append(f"({actor})")
+    if reason:
+        message_bits.append(f"- {reason}")
+    log_message = " ".join(message_bits)
+
+    details_parts = [f"task_id={task_id}"]
+    if reason:
+        details_parts.append(f"reason={reason}")
+    audit_details = ", ".join(details_parts)
+
+    if task.status == TaskStatus.pending:
+        task.abort_requested = True
+        task.status = TaskStatus.aborted
+        task.finished_at = timestamp
+        session.add(task)
+        _record_audit_event(session, "task.abort.pending", actor, audit_details)
+        session.commit()
+        worker.record_task_log(task_id, log_message)
+        worker.mark_task_aborted(task_id)
+        session.refresh(task)
+        return task
+
+    task.abort_requested = True
+    session.add(task)
+    _record_audit_event(session, "task.abort.requested", actor, audit_details)
+    session.commit()
+    worker.record_task_log(task_id, log_message)
+    worker.request_abort(task_id)
+    session.refresh(task)
     return task
 
 
@@ -268,11 +760,56 @@ async def get_task_logs(
 
     if not follow:
         entries = worker.get_logs_snapshot(task_id)
-        return TaskLogSnapshot(task_id=task_id, entries=entries)
+        return TaskLogSnapshot(
+            task_id=task_id,
+            entries=entries,
+            status=task.status,
+            branch=task.branch,
+            codex_model=task.codex_model,
+            abort_requested=bool(task.abort_requested),
+        )
 
     async def event_generator():
         async for entry in worker.stream_logs(task_id):
             yield f"data: {entry}\n\n"
-        yield "event: done\ndata: complete\n\n"
+        terminal_event = worker.get_terminal_event(task_id) or "done"
+        if terminal_event == "aborted":
+            yield "event: aborted\ndata: aborted\n\n"
+        elif terminal_event == "deleted":
+            yield "event: deleted\ndata: deleted\n\n"
+        else:
+            yield "event: done\ndata: complete\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_task(
+    task_id: int,
+    payload: TaskDeleteRequest | None = Body(default=None),
+    session: Session = Depends(get_session),
+    worker: TaskQueueManager = Depends(get_worker),
+) -> Response:
+    task = session.get(Task, task_id)
+    if task is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+    if task.status in {TaskStatus.pending, TaskStatus.running}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Task must complete before it can be deleted",
+        )
+
+    actor = _normalize_actor(payload.actor if payload else None)
+    audit_details = f"task_id={task_id}"
+
+    workspace_path = task.workspace_path
+
+    _record_audit_event(session, "task.deleted", actor, audit_details)
+    session.delete(task)
+    session.commit()
+
+    worker.handle_task_deleted(task_id)
+    _remove_workspace(workspace_path)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

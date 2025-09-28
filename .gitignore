@@ -29,3 +29,6 @@ workspaces/
 tmp-*.log
 tmp-*/
 nohup.out
+
+# Sanitizer configuration
+!.projectsanitize

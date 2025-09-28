@@ -124,7 +124,10 @@ exec "{real_git}" "$@"
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
-            entries = logs_resp.json().get("entries", [])
+            snapshot_payload = logs_resp.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "failed")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(
                 any("codex agent: invalid token supplied" in entry.lower() for entry in entries)
                 or any("git push failed" in entry.lower() for entry in entries)

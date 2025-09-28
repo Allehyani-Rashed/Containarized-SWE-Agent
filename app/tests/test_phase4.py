@@ -97,7 +97,10 @@ class Phase4CodexIntegrationTests(unittest.TestCase):
 
             snapshot = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(snapshot.status_code, 200)
-            entries = snapshot.json().get("entries", [])
+            snapshot_payload = snapshot.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "done")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(any("Codex SUCCESS" in entry for entry in entries))
             self.assertTrue(any("codex placeholder wrote change log" in entry for entry in entries))
 

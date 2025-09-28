@@ -96,7 +96,7 @@ Implement an open-source **local-first** tool that:
 
 **TODO**
 - [x] Implement `sanitize.sh` (or Python equivalent) to `rsync` source → `./workspaces/<taskId>/safe`.
-- [x] Exclude secrets/large dirs via `.codexignore` (denylist including `.env*`, `id_*`, keys, `.aws/`, `.kube/`, `node_modules/`, `dist/`, `target/`, caches, dumps, logs).
+- [x] Exclude secrets/large dirs via `.projectsanitize` (legacy `.codexignore`) (denylist including `.env*`, `id_*`, keys, `.aws/`, `.kube/`, `node_modules/`, `dist/`, `target/`, caches, dumps, logs).
 - [x] Preserve `.git` so branch/commit/push work from the sandbox.
 - [x] Ensure no mounts of `$HOME` or other host secrets in any later phase.
 

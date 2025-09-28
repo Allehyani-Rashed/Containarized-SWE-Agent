@@ -142,7 +142,10 @@ class CodexCredentialTests(unittest.TestCase):
             self.assertEqual(detail_payload["status"], "failed")
             logs = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs.status_code, 200)
-            entries = logs.json().get("entries", [])
+            snapshot_payload = logs.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "failed")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(
                 any(
                     "Codex credentials unavailable" in entry or "configure a CODEX access token" in entry
@@ -210,7 +213,10 @@ class CodexCredentialTests(unittest.TestCase):
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
-            entries = logs_resp.json().get("entries", [])
+            snapshot_payload = logs_resp.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "done")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertIsNotNone(detail_payload)
             assert detail_payload is not None
             self.assertEqual(detail_payload["status"], "done", entries)

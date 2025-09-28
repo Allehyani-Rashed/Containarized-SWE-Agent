@@ -22,6 +22,7 @@ RUN chmod +x /usr/local/bin/codex /usr/local/bin/finish_task.sh /usr/local/bin/l
 
 RUN mkdir -p /opt/codex/bin /opt/codex/bootstrap
 COPY runner/codex_agent/ /opt/codex/bootstrap/
+COPY .projectsanitize /opt/codex/bootstrap/projectsanitize-default
 COPY codex-x86_64-unknown-linux-gnu.tar.gz /opt/codex/bootstrap/
 RUN install -m 0755 /opt/codex/bootstrap/codex /opt/codex/bin/codex
 

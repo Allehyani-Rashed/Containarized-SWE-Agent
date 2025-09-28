@@ -25,6 +25,43 @@ class ProjectRead(ProjectBase):
     created_at: datetime
     codex_token_configured: bool
     codex_token_updated_at: Optional[datetime]
+    repository_url: Optional[str] = None
+    last_task_at: Optional[datetime] = None
+    last_task_status: Optional[TaskStatus] = None
+    allowlist_status: str = "unknown"
+    active_task_count: int = 0
+    total_task_count: int = 0
+
+
+class ProjectUpdate(SQLModel):
+    name: Optional[str] = None
+    local_path: Optional[str] = None
+    default_branch: Optional[str] = None
+    gitlab_host: Optional[str] = None
+    gitlab_project_path: Optional[str] = None
+    codex_token: Optional[str | None] = Field(default=None)
+    clear_codex_token: Optional[bool] = Field(default=None)
+    actor: Optional[str] = None
+
+
+class ProjectDeleteRequest(SQLModel):
+    actor: Optional[str] = None
+
+
+class ProjectTaskSummary(SQLModel):
+    id: int
+    status: TaskStatus
+    prompt: str
+    branch: Optional[str]
+    codex_model: Optional[str]
+    created_at: datetime
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+    allowlist_size: int
+
+
+class ProjectDetail(ProjectRead):
+    recent_tasks: List[ProjectTaskSummary] = Field(default_factory=list)
 
 
 class GitLabPATStatus(SQLModel):
@@ -68,6 +105,8 @@ class TaskCreate(SQLModel):
     project_id: int
     prompt: str
     allowlist: List[str] = Field(default_factory=list)
+    branch_name: Optional[str] = None
+    codex_model: Optional[str] = None
 
 
 class TaskRead(SQLModel):
@@ -84,8 +123,38 @@ class TaskRead(SQLModel):
     workspace_path: Optional[str]
     codex_agent_version: Optional[str]
     codex_invocation: Optional[str]
+    codex_model: Optional[str]
+    abort_requested: bool
+
+
+class TaskListResponse(SQLModel):
+    items: List[TaskRead] = Field(default_factory=list)
+    total: int = 0
+    limit: int = 50
+    offset: int = 0
+    next_offset: Optional[int] = None
+
+
+class TaskAbortRequest(SQLModel):
+    actor: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class TaskDeleteRequest(SQLModel):
+    actor: Optional[str] = None
 
 
 class TaskLogSnapshot(SQLModel):
     task_id: int
     entries: List[str]
+    status: TaskStatus
+    branch: Optional[str]
+    codex_model: Optional[str]
+    abort_requested: bool
+
+
+class CodexModelSummary(SQLModel):
+    id: str
+    label: str
+    description: Optional[str] = None
+    is_default: bool = False

@@ -13,7 +13,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACES_ROOT = REPO_ROOT / "workspaces"
 logger = logging.getLogger(__name__)
 
-# Fallback patterns used if a project does not provide a .codexignore
+PRIMARY_SANITIZER_FILENAME = ".projectsanitize"
+LEGACY_SANITIZER_FILENAME = ".codexignore"
+
+# Fallback patterns used if a project does not provide a sanitizer file
 DEFAULT_DENY_PATTERNS: tuple[str, ...] = (
     ".env",
     ".env.*",
@@ -65,16 +68,31 @@ ANDROID_BUILD_PATTERNS: tuple[str, ...] = (
 )
 
 
-def load_codexignore_patterns(project_root: Path) -> List[str]:
-    """Return deny patterns sourced from .codexignore, or defaults when missing."""
-    ignore_file = project_root / ".codexignore"
+def load_sanitizer_patterns(project_root: Path) -> List[str]:
+    """Return deny patterns sourced from .projectsanitize or the legacy .codexignore."""
+
+    primary_file = project_root / PRIMARY_SANITIZER_FILENAME
+    legacy_file = project_root / LEGACY_SANITIZER_FILENAME
+
     patterns: list[str] = []
-    if ignore_file.exists():
-        for raw_line in ignore_file.read_text().splitlines():
+    selected_file: Path | None = None
+
+    if primary_file.exists():
+        selected_file = primary_file
+    elif legacy_file.exists():
+        selected_file = legacy_file
+        logger.warning(
+            "Deprecated sanitizer file .codexignore detected at %s; rename it to .projectsanitize before support is removed.",
+            legacy_file,
+        )
+
+    if selected_file is not None:
+        for raw_line in selected_file.read_text().splitlines():
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
             patterns.append(line)
+
     if not patterns:
         patterns.extend(DEFAULT_DENY_PATTERNS)
     # Always ensure internal workspaces are excluded even if omitted by the project.
@@ -227,7 +245,7 @@ def sanitize_workspace(
     if target_dir.exists():
         shutil.rmtree(target_dir)
 
-    patterns = load_codexignore_patterns(source_root)
+    patterns = load_sanitizer_patterns(source_root)
     if "workspaces" not in {p.rstrip("/") for p in patterns}:
         patterns.append("workspaces/")
 

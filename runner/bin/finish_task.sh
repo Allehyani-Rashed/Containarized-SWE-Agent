@@ -24,6 +24,7 @@ done
 
 WORKDIR=$(pwd)
 TASK_ID_LABEL=${TASK_ID:-unknown}
+MODEL_ID=${CODEX_MODEL_ID:-}
 
 GITLAB_HOST_RAW=${GITLAB_HOST%/}
 if [[ ! "$GITLAB_HOST_RAW" =~ ^https?:// ]]; then
@@ -41,6 +42,9 @@ MR_TITLE_TEXT=${MR_TITLE}
 DRY_RUN=${RUNNER_GIT_DRY_RUN:-0}
 
 log "Preparing git workspace for task ${TASK_ID_LABEL}"
+if [[ -n "${MODEL_ID}" ]]; then
+  log "Using Codex model ${MODEL_ID}"
+fi
 
 git config --global user.name "${GIT_USER_NAME:-Codex Runner}"
 git config --global user.email "${GIT_USER_EMAIL:-codex@gitlab.local}"
@@ -211,7 +215,11 @@ if not os.path.isabs(result_path):
     result_path = os.path.join(os.getcwd(), result_path)
 path = pathlib.Path(result_path)
 path.parent.mkdir(parents=True, exist_ok=True)
-output = {"branch": os.environ.get("BRANCH", ""), "mr_url": os.environ.get("MR_URL", "")}
+output = {
+    "branch": os.environ.get("BRANCH", ""),
+    "mr_url": os.environ.get("MR_URL", ""),
+    "codex_model": os.environ.get("CODEX_MODEL_ID", ""),
+}
 path.write_text(json.dumps(output) + "\n", encoding="utf-8")
 PY
 

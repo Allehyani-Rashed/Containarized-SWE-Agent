@@ -8,6 +8,7 @@ services:
       - "8888:8888"
     volumes:
       - ./proxy/filter.list:/etc/tinyproxy/filter.list:ro
+      - ./.projectsanitize:/etc/tinyproxy/.projectsanitize-template:ro
     networks:
       - codex-shared
 

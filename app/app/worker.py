@@ -14,7 +14,7 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from .allowlist import merge_allowlists, refresh_proxy_allowlist
-from .codex_runner import CodexRunnerError, run_codex
+from .codex_runner import CodexRunnerAborted, CodexRunnerError, run_codex
 from .integrations import (
     ChatGPTSessionError,
     ChatGPTSessionMaterial,
@@ -64,6 +64,8 @@ class TaskQueueManager:
         self._completed: Dict[int, bool] = {}
         self._log_paths: Dict[int, Path] = {}
         self._redactions: Dict[int, List[str]] = {}
+        self._abort_signals: Dict[int, Event] = {}
+        self._terminal_events: Dict[int, str] = {}
         self._active_task_id: Optional[int] = None
         self._gitlab_token_cache: Optional[str] = None
         self._gitlab_token_present: bool = False
@@ -76,6 +78,7 @@ class TaskQueueManager:
 
     def enqueue(self, task_id: int) -> None:
         self._hydrate_logs_from_disk(task_id)
+        self._ensure_abort_signal(task_id)
         with self._lock:
             self._logs.setdefault(task_id, [])
             self._completed.setdefault(task_id, False)
@@ -83,6 +86,7 @@ class TaskQueueManager:
 
     def register_task(self, task_id: int) -> None:
         self._hydrate_logs_from_disk(task_id)
+        self._ensure_abort_signal(task_id)
         with self._lock:
             self._logs.setdefault(task_id, [])
             self._completed.setdefault(task_id, False)
@@ -131,6 +135,7 @@ class TaskQueueManager:
 
     def _process_task(self, task_id: int) -> None:
         self._set_active_task(task_id)
+        abort_signal = self._get_abort_signal(task_id)
         project_root: Path | None = None
         task_prompt = ""
         task_allowlist: list[str] = []
@@ -140,14 +145,19 @@ class TaskQueueManager:
         session_bundle: ChatGPTSessionMaterial | None = None
         session_bundle_error: str | None = None
         branch_name = ""
+        branch_was_provided = False
         mr_title = ""
         target_branch = ""
         gitlab_host = ""
         gitlab_project_path = ""
+        codex_model = None
         try:
             with Session(self._engine) as session:
                 task = session.get(Task, task_id)
                 if task is None:
+                    return
+                if task.status == TaskStatus.aborted:
+                    self._mark_complete(task_id, terminal_event="aborted")
                     return
                 project = session.get(Project, task.project_id)
                 if project is None:
@@ -160,6 +170,12 @@ class TaskQueueManager:
                     return
                 if task.status != TaskStatus.pending:
                     return
+                if self._abort_if_requested(
+                    task_id,
+                    session,
+                    message="Abort requested before task start; skipping execution",
+                ):
+                    return
                 project_root = Path(project.local_path).expanduser()
                 task.status = TaskStatus.running
                 task.started_at = datetime.now(timezone.utc)
@@ -168,6 +184,11 @@ class TaskQueueManager:
                 target_branch = project.default_branch
                 gitlab_host = project.gitlab_host
                 gitlab_project_path = project.gitlab_project_path
+                branch_name = (task.branch or "").strip() or _generate_branch_name(task_id)
+                branch_was_provided = bool(task.branch)
+                if not branch_was_provided:
+                    task.branch = branch_name
+                codex_model = (task.codex_model or None)
                 try:
                     gitlab_token = self._resolve_gitlab_token(session)
                 except SecretError as exc:
@@ -277,6 +298,13 @@ class TaskQueueManager:
                         f"ChatGPT session bundle unusable ({session_bundle_error}); continuing with local stub",
                     )
 
+            if self._abort_if_requested(
+                task_id,
+                session,
+                message="Abort requested before workspace preparation; stopping task",
+            ):
+                return
+
             redactions = [gitlab_token, codex_token or ""]
             if session_bundle_raw:
                 redactions.append(session_bundle_raw)
@@ -286,9 +314,13 @@ class TaskQueueManager:
                     # Base64 encoding failure should not block task execution; raw value already registered.
                     pass
             self._register_redactions(task_id, redactions)
-            branch_name = _generate_branch_name(task_id)
             mr_title = _build_mr_title(task_id, task_prompt)
-            self._append_log(task_id, f"Proposed branch name: {branch_name}")
+            if branch_was_provided:
+                self._append_log(task_id, f"Using requested branch: {branch_name}")
+            else:
+                self._append_log(task_id, f"Proposed branch name: {branch_name}")
+            if codex_model:
+                self._append_log(task_id, f"Codex model override: {codex_model}")
 
             self._append_log(task_id, "Task started; sanitizing workspace")
             if project_root is None:
@@ -318,6 +350,12 @@ class TaskQueueManager:
                 task.workspace_path = str(sanitized_path)
                 session.add(task)
                 session.commit()
+                if self._abort_if_requested(
+                    task_id,
+                    session,
+                    message="Abort requested after workspace preparation; stopping task",
+                ):
+                    return
 
             docker_disabled = os.environ.get("RUNNER_DISABLE_DOCKER") == "1"
             if docker_disabled:
@@ -350,13 +388,23 @@ class TaskQueueManager:
             else:
                 joined_allowlist = ", ".join(effective_allowlist) or "<empty>"
                 self._append_log(task_id, f"Effective allowlist: {joined_allowlist}")
-                try:
-                    refresh_proxy_allowlist(
-                        effective_allowlist,
-                        log_fn=lambda message: self._append_log(task_id, f"proxy: {message}"),
-                    )
-                except Exception as exc:  # noqa: BLE001 - log but continue
-                    self._append_log(task_id, f"Proxy refresh failed: {exc}")
+            try:
+                refresh_proxy_allowlist(
+                    effective_allowlist,
+                    log_fn=lambda message: self._append_log(task_id, f"proxy: {message}"),
+                )
+            except Exception as exc:  # noqa: BLE001 - log but continue
+                self._append_log(task_id, f"Proxy refresh failed: {exc}")
+            with Session(self._engine) as session:
+                task = session.get(Task, task_id)
+                if task is None:
+                    return
+                if self._abort_if_requested(
+                    task_id,
+                    session,
+                    message="Abort requested before codex launch; stopping task",
+                ):
+                    return
             try:
                 result = run_codex(
                     sanitized_path,
@@ -371,8 +419,22 @@ class TaskQueueManager:
                     branch_name=branch_name,
                     mr_title=mr_title,
                     task_id=task_id,
+                    codex_model=codex_model,
                     log_fn=lambda message: self._append_log(task_id, f"codex: {message}"),
+                    abort_event=abort_signal,
                 )
+            except CodexRunnerAborted:
+                self._append_log(task_id, "Abort acknowledged by codex runner; stopping task")
+                with Session(self._engine) as session:
+                    task = session.get(Task, task_id)
+                    if task is None:
+                        return
+                    task.status = TaskStatus.aborted
+                    task.finished_at = datetime.now(timezone.utc)
+                    session.add(task)
+                    session.commit()
+                self._mark_complete(task_id, terminal_event="aborted")
+                return
             except (CodexRunnerError, Exception) as exc:  # noqa: BLE001 - surface failure to logs
                 self._append_log(task_id, f"Codex execution error: {exc}")
                 with Session(self._engine) as session:
@@ -406,6 +468,7 @@ class TaskQueueManager:
                     task.finished_at = datetime.now(timezone.utc)
                     task.codex_agent_version = result.agent_version
                     task.codex_invocation = flags_str or None
+                    task.codex_model = result.codex_model or codex_model
                     session.add(task)
                     session.commit()
                 self._mark_complete(task_id)
@@ -431,6 +494,7 @@ class TaskQueueManager:
                 task.mr_url = result.mr_url or None
                 task.codex_agent_version = result.agent_version
                 task.codex_invocation = flags_str or None
+                task.codex_model = result.codex_model or codex_model
                 session.add(task)
                 session.commit()
 
@@ -447,15 +511,72 @@ class TaskQueueManager:
             self._logs.setdefault(task_id, []).append(line)
         self._write_log_line(task_id, line)
 
-    def _mark_complete(self, task_id: int) -> None:
+    def _mark_complete(self, task_id: int, *, terminal_event: str = "done") -> None:
         with self._lock:
             self._completed[task_id] = True
+            self._terminal_events[task_id] = terminal_event
+        signal = self._abort_signals.pop(task_id, None)
+        if signal is not None:
+            signal.set()
 
     def _log_state(self, task_id: int) -> Tuple[List[str], bool]:
         with self._lock:
             history = list(self._logs.get(task_id, []))
             done = self._completed.get(task_id, False)
         return history, done
+
+    def _ensure_abort_signal(self, task_id: int) -> Event:
+        with self._lock:
+            signal = self._abort_signals.get(task_id)
+            if signal is None:
+                signal = Event()
+                self._abort_signals[task_id] = signal
+        return signal
+
+    def _get_abort_signal(self, task_id: int) -> Event:
+        return self._ensure_abort_signal(task_id)
+
+    def record_task_log(self, task_id: int, message: str) -> None:
+        self._append_log(task_id, message)
+
+    def request_abort(self, task_id: int) -> None:
+        signal = self._ensure_abort_signal(task_id)
+        signal.set()
+
+    def mark_task_aborted(self, task_id: int) -> None:
+        self._ensure_abort_signal(task_id).set()
+        self._mark_complete(task_id, terminal_event="aborted")
+
+    def handle_task_deleted(self, task_id: int) -> None:
+        self._mark_complete(task_id, terminal_event="deleted")
+        with self._lock:
+            self._logs.pop(task_id, None)
+        self._remove_log_file(task_id)
+
+    def get_terminal_event(self, task_id: int) -> Optional[str]:
+        with self._lock:
+            return self._terminal_events.get(task_id)
+
+    def _abort_if_requested(
+        self,
+        task_id: int,
+        session: Session,
+        message: Optional[str] = None,
+    ) -> bool:
+        task = session.get(Task, task_id)
+        if task is None:
+            return False
+        signal = self._ensure_abort_signal(task_id)
+        if not (task.abort_requested or signal.is_set()):
+            return False
+        if message:
+            self._append_log(task_id, message)
+        task.status = TaskStatus.aborted
+        task.finished_at = datetime.now(timezone.utc)
+        session.add(task)
+        session.commit()
+        self._mark_complete(task_id, terminal_event="aborted")
+        return True
 
     # Persistence & Redaction helpers ------------------------------------
 
@@ -490,6 +611,15 @@ class TaskQueueManager:
                 handle.write(f"{line}\n")
         except OSError:
             # Disk persistence is best-effort; keep in-memory buffer if writes fail.
+            pass
+
+    def _remove_log_file(self, task_id: int) -> None:
+        path = self._log_paths.pop(task_id, None)
+        if path is None:
+            path = LOG_STORAGE_DIR / f"{task_id}.log"
+        try:
+            path.unlink()
+        except OSError:
             pass
 
     def _sanitize_message(self, task_id: int, message: str) -> str:

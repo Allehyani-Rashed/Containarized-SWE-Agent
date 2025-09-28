@@ -104,7 +104,10 @@ class Phase1FlowTests(unittest.TestCase):
 
             logs_snapshot = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_snapshot.status_code, 200)
-            entries = logs_snapshot.json().get("entries", [])
+            snapshot_payload = logs_snapshot.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "done")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(entries, "Expected log snapshot entries")
             self.assertTrue(
                 any("Codex SUCCESS" in entry for entry in entries),

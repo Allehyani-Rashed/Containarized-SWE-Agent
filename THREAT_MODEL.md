@@ -13,7 +13,7 @@ single-user, local-first deployment described in the project objective.
     repository and home directory are never mounted into the container.
   - The container filesystem is read-only with explicit tmpfs mounts for
     transient paths, preventing writes outside `/work`.
-  - Workspace sanitizer filters secrets listed in `.codexignore` before the
+  - Workspace sanitizer filters secrets listed in `.projectsanitize` (falling back to legacy `.codexignore` with a warning) before the
     run begins.
 - **Residual Risk**: Secrets accidentally committed to the repository are still
   present inside the sanitized workspace.
@@ -69,7 +69,7 @@ single-user, local-first deployment described in the project objective.
   - Tokens enter the container via environment variables but logs redact the
     values and the scripts avoid `set -x`.
   - `RUNNER_GIT_DRY_RUN=1` enables local smoke tests without pushing to GitLab.
-  - Redacted logs are persisted on disk and surfaced through the UI.
+  - Redacted logs are persisted on disk and surfaced through the UI. Snapshot endpoints return non-sensitive metadata (status, branch, model, abort flag) alongside log lines so tooling can audit runs without exposing credentials.
 - **Residual Risk**: Operators must protect the persisted SQLite database and
   log files, and rotate credentials if compromise is suspected.
 

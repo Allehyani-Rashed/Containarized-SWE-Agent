@@ -154,7 +154,10 @@ class Phase2SanitizeTests(unittest.TestCase):
             # Logs mention the sanitized workspace
             snapshot = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(snapshot.status_code, 200)
-            entries = snapshot.json().get("entries", [])
+            snapshot_payload = snapshot.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "done")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(
                 any("Workspace ready" in entry for entry in entries),
                 "Expected workspace sanitization log entry",

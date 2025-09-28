@@ -119,7 +119,10 @@ class Phase6AllowlistTests(unittest.TestCase):
 
             snapshot_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(snapshot_resp.status_code, 200)
-            entries = snapshot_resp.json().get("entries", [])
+            snapshot_payload = snapshot_resp.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("status"), "done")
+            self.assertFalse(snapshot_payload.get("abort_requested", False))
 
         effective_lines = [entry for entry in entries if "Effective allowlist" in entry]
         self.assertTrue(effective_lines, "Expected effective allowlist log entry")

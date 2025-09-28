@@ -86,6 +86,8 @@ def _ensure_task_columns(db_engine) -> None:
     statements: dict[str, str] = {
         "codex_agent_version": "ALTER TABLE task ADD COLUMN codex_agent_version VARCHAR",
         "codex_invocation": "ALTER TABLE task ADD COLUMN codex_invocation VARCHAR",
+        "codex_model": "ALTER TABLE task ADD COLUMN codex_model VARCHAR",
+        "abort_requested": "ALTER TABLE task ADD COLUMN abort_requested BOOLEAN NOT NULL DEFAULT 0",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}

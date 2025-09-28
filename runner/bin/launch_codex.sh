@@ -29,6 +29,10 @@ if [[ ${VERSION_STATUS} -ne 0 || -z "${VERSION_OUTPUT}" ]]; then
 fi
 echo "[codex-launch] codex --version -> ${VERSION_OUTPUT}" >&2
 
+if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
+  echo "[codex-launch] Selected Codex model: ${CODEX_MODEL_ID}" >&2
+fi
+
 ALLOW_STUB=${CODEX_ALLOW_STUB:-0}
 if [[ "${BIN_SIGNATURE}" != "7f454c46" ]]; then
   if [[ "${ALLOW_STUB}" != "1" ]]; then
@@ -80,6 +84,9 @@ else:
 flags = [flag for flag in os.environ.get("CODEX_INVOCATION_FLAGS", "").split() if flag]
 version = os.environ.get("CODEX_VERSION_OUTPUT", "unknown")
 payload = {"agent_version": version, "mode": "docker", "flags": flags}
+model = os.environ.get("CODEX_MODEL_ID")
+if model:
+    payload["model"] = model
 metadata_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 PY
 

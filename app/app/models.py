@@ -14,6 +14,7 @@ class TaskStatus(str, Enum):
     running = "running"
     done = "done"
     failed = "failed"
+    aborted = "aborted"
 
 
 def _utc_now() -> datetime:
@@ -70,3 +71,5 @@ class Task(SQLModel, table=True):
     workspace_path: Optional[str] = Field(default=None, nullable=True)
     codex_agent_version: Optional[str] = Field(default=None, nullable=True)
     codex_invocation: Optional[str] = Field(default=None, nullable=True)
+    codex_model: Optional[str] = Field(default=None, nullable=True)
+    abort_requested: bool = Field(default=False, nullable=False)

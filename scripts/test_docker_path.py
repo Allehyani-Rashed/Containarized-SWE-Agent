@@ -54,6 +54,13 @@ def _create_sample_project(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     (root / "README.md").write_text("docker path demo\n", encoding="utf-8")
     (root / "notes.txt").write_text("original content\n", encoding="utf-8")
+    (root / ".projectsanitize").write_text(
+        "# Sanitized workspace denylist for docker demo\n"
+        "node_modules/\n"
+        "dist/\n"
+        ".env\n",
+        encoding="utf-8",
+    )
     subprocess.run(["git", "init", "-b", "main"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["git", "config", "user.email", "codex-docker@example.com"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["git", "config", "user.name", "Codex Docker"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -147,6 +154,16 @@ def _parse_args() -> argparse.Namespace:
         help="Path to a ChatGPT auth.json bundle to import before running the task",
     )
     parser.add_argument(
+        "--branch",
+        dest="branch_name",
+        help="Optional branch name to use instead of the generated codex/task-* branch",
+    )
+    parser.add_argument(
+        "--codex-model",
+        dest="codex_model",
+        help="Optional Codex model identifier to use for the task run",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="Disable RUNNER_GIT_DRY_RUN and push to GitLab (requires valid token and allowlisted network)",
@@ -187,15 +204,26 @@ def _register_project(
     return response.json()["id"]
 
 
-def _submit_task(client: TestClient, project_id: int, prompt: str, allowlist: list[str]) -> int:
-    response = client.post(
-        "/tasks",
-        json={
-            "project_id": project_id,
-            "prompt": prompt,
-            "allowlist": allowlist,
-        },
-    )
+def _submit_task(
+    client: TestClient,
+    project_id: int,
+    prompt: str,
+    allowlist: list[str],
+    *,
+    branch_name: Optional[str] = None,
+    codex_model: Optional[str] = None,
+) -> int:
+    payload = {
+        "project_id": project_id,
+        "prompt": prompt,
+        "allowlist": allowlist,
+    }
+    if branch_name:
+        payload["branch_name"] = branch_name
+    if codex_model:
+        payload["codex_model"] = codex_model
+
+    response = client.post("/tasks", json=payload)
     response.raise_for_status()
     return response.json()["id"]
 
@@ -215,9 +243,18 @@ def _wait_for_completion(client: TestClient, task_id: int, timeout: float = 40.0
 def _print_logs(client: TestClient, task_id: int) -> list[str]:
     log_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
     log_resp.raise_for_status()
-    entries = log_resp.json().get("entries", [])
+    payload = log_resp.json()
+    entries = payload.get("entries", [])
+    snapshot_status = payload.get("status")
+    snapshot_branch = payload.get("branch") or "--"
+    snapshot_model = payload.get("codex_model") or "default"
+    snapshot_abort = payload.get("abort_requested", False)
     print(LOG_DIVIDER)
     print("Task log snapshot:")
+    print(
+        f"- Status at capture: {snapshot_status or '--'} | Branch: {snapshot_branch} | "
+        f"Model: {snapshot_model} | Abort requested: {'yes' if snapshot_abort else 'no'}"
+    )
     for entry in entries:
         print(entry)
     print(LOG_DIVIDER)
@@ -350,9 +387,22 @@ def main() -> None:
                 allowlist = args.allowlist or []
                 if project_id is None:
                     raise RuntimeError("Project ID required to submit a new task")
-                task_id = _submit_task(client, project_id, args.prompt, allowlist)
+                task_id = _submit_task(
+                    client,
+                    project_id,
+                    args.prompt,
+                    allowlist,
+                    branch_name=args.branch_name,
+                    codex_model=args.codex_model,
+                )
                 print(
-                    f"Submitted task {task_id} (project_id={project_id}, allowlist={allowlist or '[]'})"
+                    "Submitted task {task_id} (project_id={pid}, allowlist={allowlist}, branch={branch}, model={model})".format(
+                        task_id=task_id,
+                        pid=project_id,
+                        allowlist=allowlist or "[]",
+                        branch=args.branch_name or "<generated>",
+                        model=args.codex_model or "<default>",
+                    )
                 )
                 created_task = True
 
@@ -365,6 +415,10 @@ def main() -> None:
             else:
                 print("Sanitized workspace path missing from task result")
 
+            if result.get("branch"):
+                print(f"Branch recorded: {result['branch']}")
+            if result.get("codex_model"):
+                print(f"Codex model used: {result['codex_model']}")
             if result.get("codex_agent_version"):
                 print(f"Codex agent version: {result['codex_agent_version']}")
             if result.get("codex_invocation"):
