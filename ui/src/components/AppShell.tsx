@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 
 const navLinks = [
-  { to: '/tasks/submit', label: 'Submit Task' },
+  { to: '/', label: 'Submit Task' },
   { to: '/tasks', label: 'Tasks' },
   { to: '/projects', label: 'Projects' },
   { to: '/settings', label: 'Settings' },
@@ -23,7 +23,7 @@ function AppShell() {
                 <NavLink
                   to={link.to}
                   className={({ isActive }) => (isActive ? 'nav-link active' : 'nav-link')}
-                  end={link.to === '/tasks/submit'}
+                  end={link.to === '/'}
                 >
                   {link.label}
                 </NavLink>

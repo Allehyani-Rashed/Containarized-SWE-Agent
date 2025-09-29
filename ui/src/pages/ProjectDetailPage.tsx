@@ -206,7 +206,7 @@ function ProjectDetailPage() {
             <button
               type="button"
               className="ghost-button"
-              onClick={() => navigate('/tasks/submit', { state: { projectId: summary.id } })}
+              onClick={() => navigate('/', { state: { projectId: summary.id } })}
             >
               Submit Task
             </button>

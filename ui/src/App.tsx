@@ -19,13 +19,12 @@ function App() {
           </ProjectsProvider>
         )}
       >
-        <Route index element={<Navigate to="/tasks/submit" replace />} />
-        <Route path="tasks/submit" element={<TaskSubmitPage />} />
+        <Route index element={<TaskSubmitPage />} />
         <Route path="tasks" element={<TaskListPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="*" element={<Navigate to="/tasks/submit" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );
