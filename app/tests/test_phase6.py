@@ -9,6 +9,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 def _initialize_git_repo(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
@@ -28,6 +30,7 @@ class Phase6AllowlistTests(unittest.TestCase):
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
         os.environ["SKIP_PROXY_RELOAD"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
 
         self.proxy_dir = Path(self.tmp_dir.name) / "proxy"
         self.filter_path = self.proxy_dir / "filter.list"
@@ -65,9 +68,10 @@ class Phase6AllowlistTests(unittest.TestCase):
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
         os.environ.pop("SKIP_PROXY_RELOAD", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
 
     def test_allowlist_normalization_and_filter_generation(self) -> None:
-        project_root = Path(self.tmp_dir.name) / "phase6-project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
         _initialize_git_repo(project_root)
 
         with TestClient(self.main.app) as client:
@@ -80,7 +84,6 @@ class Phase6AllowlistTests(unittest.TestCase):
                 "/projects",
                 json={
                     "name": "phase6-demo",
-                    "local_path": str(project_root),
                     "default_branch": "main",
                     "gitlab_host": "https://gitlab.example.com",
                     "gitlab_project_path": "example/demo",
@@ -88,6 +91,8 @@ class Phase6AllowlistTests(unittest.TestCase):
             )
             self.assertEqual(project_resp.status_code, 201)
             project_data = project_resp.json()
+            self.assertEqual(project_data["cache_path"], str(project_root))
+            self.assertEqual(project_data["cache_status"], "ready")
 
             task_resp = client.post(
                 "/tasks",

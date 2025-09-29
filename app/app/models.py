@@ -24,7 +24,6 @@ def _utc_now() -> datetime:
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(index=True)
-    local_path: str
     default_branch: str
     gitlab_host: str
     gitlab_project_path: str
@@ -32,6 +31,8 @@ class Project(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_utc_now, nullable=False)
     codex_token_encrypted: Optional[str] = Field(default=None, nullable=True)
     codex_token_updated_at: Optional[datetime] = Field(default=None, nullable=True)
+    cache_quota_mb: Optional[int] = Field(default=None, nullable=True)
+    cache_prune_after_hours: Optional[int] = Field(default=None, nullable=True)
 
 
 class IntegrationCredential(SQLModel, table=True):
@@ -73,3 +74,4 @@ class Task(SQLModel, table=True):
     codex_invocation: Optional[str] = Field(default=None, nullable=True)
     codex_model: Optional[str] = Field(default=None, nullable=True)
     abort_requested: bool = Field(default=False, nullable=False)
+    cache_commit: Optional[str] = Field(default=None, nullable=True)

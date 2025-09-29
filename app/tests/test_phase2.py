@@ -9,6 +9,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 def _initialize_git_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -24,6 +26,7 @@ class Phase2SanitizeTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'test.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -39,9 +42,10 @@ class Phase2SanitizeTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
 
     def _build_sample_project(self) -> Path:
-        project_root = Path(self.tmp_dir.name) / "demo-project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo project\n", encoding="utf-8")
         (project_root / "codex.txt").write_text("codex content\n", encoding="utf-8")
@@ -94,7 +98,6 @@ class Phase2SanitizeTests(unittest.TestCase):
 
             project_payload = {
                 "name": "demo-phase2",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/demo",
@@ -104,6 +107,8 @@ class Phase2SanitizeTests(unittest.TestCase):
             project_data = project_resp.json()
             self.assertIn("codex_token_configured", project_data)
             self.assertFalse(project_data["codex_token_configured"])
+            self.assertEqual(project_data["cache_path"], str(project_root))
+            self.assertEqual(project_data["cache_status"], "ready")
 
             task_resp = client.post(
                 "/tasks",
@@ -161,6 +166,10 @@ class Phase2SanitizeTests(unittest.TestCase):
             self.assertTrue(
                 any("Workspace ready" in entry for entry in entries),
                 "Expected workspace sanitization log entry",
+            )
+            self.assertTrue(
+                any("Project cache synced" in entry for entry in entries),
+                "Expected project cache sync log entry",
             )
 
         # Cleanup sanitized workspace artefacts

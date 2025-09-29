@@ -21,11 +21,12 @@ import { formatTimestamp } from '../utils/time';
 
 type ProjectFormState = {
   name: string;
-  local_path: string;
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
   codex_token: string;
+  cache_quota_mb: string;
+  cache_prune_after_hours: string;
 };
 
 type FormErrors = Partial<Record<keyof ProjectFormState, string>>;
@@ -40,11 +41,12 @@ type SortKey =
 
 const initialFormState: ProjectFormState = {
   name: '',
-  local_path: '',
   default_branch: 'main',
   gitlab_host: 'https://gitlab.com',
   gitlab_project_path: '',
   codex_token: '',
+  cache_quota_mb: '',
+  cache_prune_after_hours: '',
 };
 
 const allowlistOrder: Record<ProjectAllowlistStatus, number> = {
@@ -68,8 +70,6 @@ function validateField(field: keyof ProjectFormState, value: string): string | n
   switch (field) {
     case 'name':
       return trimmed ? null : 'Name is required';
-    case 'local_path':
-      return trimmed ? null : 'Local path is required';
     case 'default_branch':
       if (!trimmed) {
         return 'Default branch is required';
@@ -106,6 +106,22 @@ function validateField(field: keyof ProjectFormState, value: string): string | n
       }
       if (/\s/.test(trimmed)) {
         return 'Project path cannot include spaces';
+      }
+      return null;
+    case 'cache_quota_mb':
+      if (!trimmed) {
+        return null;
+      }
+      if (!/^\d+$/.test(trimmed)) {
+        return 'Cache quota must be a non-negative integer (megabytes)';
+      }
+      return null;
+    case 'cache_prune_after_hours':
+      if (!trimmed) {
+        return null;
+      }
+      if (!/^\d+$/.test(trimmed)) {
+        return 'Prune interval must be a non-negative integer (hours)';
       }
       return null;
     default:
@@ -273,12 +289,21 @@ function ProjectsPage() {
 
     const payload: ProjectCreatePayload = {
       name: createForm.name.trim(),
-      local_path: createForm.local_path.trim(),
       default_branch: createForm.default_branch.trim(),
       gitlab_host: normalizeHost(createForm.gitlab_host),
       gitlab_project_path: normalizeProjectPath(createForm.gitlab_project_path),
       codex_token: createForm.codex_token.trim() ? createForm.codex_token.trim() : null,
     };
+
+    const cacheQuota = createForm.cache_quota_mb.trim();
+    if (cacheQuota) {
+      payload.cache_quota_mb = Number(cacheQuota);
+    }
+
+    const pruneInterval = createForm.cache_prune_after_hours.trim();
+    if (pruneInterval) {
+      payload.cache_prune_after_hours = Number(pruneInterval);
+    }
 
     setCreateSubmitting(true);
     try {
@@ -312,11 +337,24 @@ function ProjectsPage() {
 
     const payload: ProjectUpdatePayload = {
       name: editForm.name.trim(),
-      local_path: editForm.local_path.trim(),
       default_branch: editForm.default_branch.trim(),
       gitlab_host: normalizeHost(editForm.gitlab_host),
       gitlab_project_path: normalizeProjectPath(editForm.gitlab_project_path),
     };
+
+    const quotaValue = editForm.cache_quota_mb.trim();
+    if (quotaValue) {
+      payload.cache_quota_mb = Number(quotaValue);
+    } else if (editingProject.cache_quota_mb != null) {
+      payload.cache_quota_mb = null;
+    }
+
+    const pruneValue = editForm.cache_prune_after_hours.trim();
+    if (pruneValue) {
+      payload.cache_prune_after_hours = Number(pruneValue);
+    } else if (editingProject.cache_prune_after_hours != null) {
+      payload.cache_prune_after_hours = null;
+    }
 
     const trimmedToken = editForm.codex_token.trim();
     if (trimmedToken) {
@@ -345,11 +383,13 @@ function ProjectsPage() {
     setEditingProject(project);
     setEditForm({
       name: project.name,
-      local_path: project.local_path,
       default_branch: project.default_branch,
       gitlab_host: project.gitlab_host,
       gitlab_project_path: project.gitlab_project_path,
       codex_token: '',
+      cache_quota_mb: project.cache_quota_mb == null ? '' : String(project.cache_quota_mb),
+      cache_prune_after_hours:
+        project.cache_prune_after_hours == null ? '' : String(project.cache_prune_after_hours),
     });
     setEditErrors({});
     setClearCodexToken(false);
@@ -444,6 +484,45 @@ function ProjectsPage() {
     return <span className="status status-running">No runs yet</span>;
   };
 
+  const renderCacheCell = (project: Project) => {
+    let badgeClass = 'status-running';
+    let badgeLabel = project.cache_status || 'unknown';
+    if (project.cache_status === 'ready') {
+      badgeClass = 'status-done';
+      badgeLabel = 'Ready';
+    } else if (project.cache_status === 'present') {
+      badgeClass = 'status-running';
+      badgeLabel = 'Present';
+    } else if (project.cache_status === 'missing') {
+      badgeClass = 'status-failed';
+      badgeLabel = 'Missing';
+    }
+
+    const shortCommit = project.last_cache_commit ? project.last_cache_commit.slice(0, 12) : null;
+
+    return (
+      <div className="table-status">
+        <span className={`status ${badgeClass}`}>{badgeLabel}</span>
+        <div className="meta">{project.cache_path}</div>
+        {shortCommit ? <div className="meta">HEAD {shortCommit}</div> : null}
+      </div>
+    );
+  };
+
+  const copyRefreshCommand = async (project: Project) => {
+    const command = `python3 scripts/project_cache.py --refresh --project-id ${project.id}`;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(command);
+        setSuccessMessage(`Copied cache refresh command for ${project.name}.`);
+        return;
+      }
+    } catch (copyError) {
+      setPageError((prev) => prev ?? 'Unable to copy refresh command; use the prompt instead.');
+    }
+    window.prompt('Copy the cache refresh command and run it from the repository root:', command);
+  };
+
   const sortIndicator = (key: SortKey) => {
     if (key !== sortKey) {
       return null;
@@ -487,16 +566,6 @@ function ProjectsPage() {
             {createErrors.name ? <span className="status status-failed">{createErrors.name}</span> : null}
           </label>
           <label>
-            Local Path
-            <input
-              type="text"
-              value={createForm.local_path}
-              onChange={(event) => handleCreateChange('local_path', event.target.value)}
-              required
-            />
-            {createErrors.local_path ? <span className="status status-failed">{createErrors.local_path}</span> : null}
-          </label>
-          <label>
             Default Branch
             <input
               type="text"
@@ -526,6 +595,9 @@ function ProjectsPage() {
               onChange={(event) => handleCreateChange('gitlab_project_path', event.target.value)}
               required
             />
+            <p className="meta">
+              The runner clones into <code>project-cache/&lt;slug&gt;/repo</code>; no local path input is required.
+            </p>
             {createErrors.gitlab_project_path ? (
               <span className="status status-failed">{createErrors.gitlab_project_path}</span>
             ) : null}
@@ -539,6 +611,36 @@ function ProjectsPage() {
               placeholder="sk-..."
             />
           </label>
+          <div className="field-grid">
+            <label>
+              Cache Quota (MB)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={createForm.cache_quota_mb}
+                onChange={(event) => handleCreateChange('cache_quota_mb', event.target.value)}
+                placeholder="Leave blank for unlimited"
+              />
+              {createErrors.cache_quota_mb ? (
+                <span className="status status-failed">{createErrors.cache_quota_mb}</span>
+              ) : null}
+            </label>
+            <label>
+              Prune Interval (hours)
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={createForm.cache_prune_after_hours}
+                onChange={(event) => handleCreateChange('cache_prune_after_hours', event.target.value)}
+                placeholder="Leave blank to disable auto-prune"
+              />
+              {createErrors.cache_prune_after_hours ? (
+                <span className="status status-failed">{createErrors.cache_prune_after_hours}</span>
+              ) : null}
+            </label>
+          </div>
           <button type="submit" disabled={createSubmitting}>
             {createSubmitting ? 'Registering…' : 'Register Project'}
           </button>
@@ -557,6 +659,7 @@ function ProjectsPage() {
                       Name{sortIndicator('name')}
                     </th>
                     <th>Repository</th>
+                    <th>Cache</th>
                     <th {...sortableHeaderProps('gitlab_host')}>
                       Host{sortIndicator('gitlab_host')}
                     </th>
@@ -589,6 +692,7 @@ function ProjectsPage() {
                           '—'
                         )}
                       </td>
+                      <td>{renderCacheCell(project)}</td>
                       <td>{project.gitlab_host || '—'}</td>
                       <td>{project.default_branch}</td>
                       <td>{renderAllowlistBadge(project.allowlist_status)}</td>
@@ -625,6 +729,13 @@ function ProjectsPage() {
                           <button
                             type="button"
                             className="ghost-button"
+                            onClick={() => copyRefreshCommand(project)}
+                          >
+                            Copy Refresh CLI
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost-button"
                             onClick={() => handleDelete(project)}
                             disabled={project.active_task_count > 0}
                             title={
@@ -647,91 +758,115 @@ function ProjectsPage() {
       </div>
 
       {editingProject ? (
-        <form className="panel form" onSubmit={handleEditSubmit} noValidate>
-          <h3>Edit Project – {editingProject.name}</h3>
-          <label>
-            Name
-            <input
-              type="text"
-              value={editForm.name}
-              onChange={(event) => handleEditChange('name', event.target.value)}
-              required
-            />
-            {editErrors.name ? <span className="status status-failed">{editErrors.name}</span> : null}
-          </label>
-          <label>
-            Local Path
-            <input
-              type="text"
-              value={editForm.local_path}
-              onChange={(event) => handleEditChange('local_path', event.target.value)}
-              required
-            />
-            {editErrors.local_path ? <span className="status status-failed">{editErrors.local_path}</span> : null}
-          </label>
-          <label>
-            Default Branch
-            <input
-              type="text"
-              value={editForm.default_branch}
-              onChange={(event) => handleEditChange('default_branch', event.target.value)}
-              required
-            />
-            {editErrors.default_branch ? (
-              <span className="status status-failed">{editErrors.default_branch}</span>
-            ) : null}
-          </label>
-          <label>
-            GitLab Host
-            <input
-              type="text"
-              value={editForm.gitlab_host}
-              onChange={(event) => handleEditChange('gitlab_host', event.target.value)}
-              required
-            />
-            {editErrors.gitlab_host ? <span className="status status-failed">{editErrors.gitlab_host}</span> : null}
-          </label>
-          <label>
-            GitLab Project Path
-            <input
-              type="text"
-              value={editForm.gitlab_project_path}
-              onChange={(event) => handleEditChange('gitlab_project_path', event.target.value)}
-              required
-            />
-            {editErrors.gitlab_project_path ? (
-              <span className="status status-failed">{editErrors.gitlab_project_path}</span>
-            ) : null}
-          </label>
-          <label>
-            Update Codex API Token (optional)
-            <input
-              type="password"
-              value={editForm.codex_token}
-              onChange={(event) => handleEditChange('codex_token', event.target.value)}
-              placeholder={editingProject.codex_token_configured ? 'Enter new token to rotate' : 'sk-...'}
-            />
-          </label>
-          {editingProject.codex_token_configured ? (
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={clearCodexToken}
-                onChange={(event) => setClearCodexToken(event.target.checked)}
-                disabled={Boolean(editForm.codex_token.trim())}
-              />
-              <span>Clear stored Codex token for this project</span>
-            </label>
+      <form className="panel form" onSubmit={handleEditSubmit} noValidate>
+        <h3>Edit Project – {editingProject.name}</h3>
+        <label>
+          Name
+          <input
+            type="text"
+            value={editForm.name}
+            onChange={(event) => handleEditChange('name', event.target.value)}
+            required
+          />
+          {editErrors.name ? <span className="status status-failed">{editErrors.name}</span> : null}
+        </label>
+        <label>
+          Default Branch
+          <input
+            type="text"
+            value={editForm.default_branch}
+            onChange={(event) => handleEditChange('default_branch', event.target.value)}
+            required
+          />
+          {editErrors.default_branch ? (
+            <span className="status status-failed">{editErrors.default_branch}</span>
           ) : null}
-          <div className="button-row">
-            <button type="submit" disabled={editSubmitting}>
-              {editSubmitting ? 'Saving…' : 'Save Changes'}
-            </button>
-            <button type="button" className="ghost-button" onClick={handleEditCancel}>
-              Cancel
-            </button>
-          </div>
-        </form>
+        </label>
+        <label>
+          GitLab Host
+          <input
+            type="text"
+            value={editForm.gitlab_host}
+            onChange={(event) => handleEditChange('gitlab_host', event.target.value)}
+            required
+          />
+          {editErrors.gitlab_host ? <span className="status status-failed">{editErrors.gitlab_host}</span> : null}
+        </label>
+        <label>
+          GitLab Project Path
+          <input
+            type="text"
+            value={editForm.gitlab_project_path}
+            onChange={(event) => handleEditChange('gitlab_project_path', event.target.value)}
+            required
+          />
+          <p className="meta">
+            The deterministic cache lives under <code>project-cache/&lt;slug&gt;/repo</code>; refresh with
+            <code> scripts/project_cache.py --refresh</code> if needed.
+          </p>
+          {editErrors.gitlab_project_path ? (
+            <span className="status status-failed">{editErrors.gitlab_project_path}</span>
+          ) : null}
+        </label>
+        <label>
+          Update Codex API Token (optional)
+          <input
+            type="password"
+            value={editForm.codex_token}
+            onChange={(event) => handleEditChange('codex_token', event.target.value)}
+            placeholder={editingProject.codex_token_configured ? 'Enter new token to rotate' : 'sk-...'}
+          />
+        </label>
+        {editingProject.codex_token_configured ? (
+          <label className="checkbox-row">
+            <input
+              type="checkbox"
+              checked={clearCodexToken}
+              onChange={(event) => setClearCodexToken(event.target.checked)}
+              disabled={Boolean(editForm.codex_token.trim())}
+            />
+            <span>Clear stored Codex token for this project</span>
+          </label>
+        ) : null}
+        <div className="field-grid">
+          <label>
+            Cache Quota (MB)
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={editForm.cache_quota_mb}
+              onChange={(event) => handleEditChange('cache_quota_mb', event.target.value)}
+              placeholder="Leave blank for unlimited"
+            />
+            {editErrors.cache_quota_mb ? (
+              <span className="status status-failed">{editErrors.cache_quota_mb}</span>
+            ) : null}
+          </label>
+          <label>
+            Prune Interval (hours)
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={editForm.cache_prune_after_hours}
+              onChange={(event) => handleEditChange('cache_prune_after_hours', event.target.value)}
+              placeholder="Leave blank to disable auto-prune"
+            />
+            {editErrors.cache_prune_after_hours ? (
+              <span className="status status-failed">{editErrors.cache_prune_after_hours}</span>
+            ) : null}
+          </label>
+        </div>
+        <div className="button-row">
+          <button type="submit" disabled={editSubmitting}>
+            {editSubmitting ? 'Saving…' : 'Save Changes'}
+          </button>
+          <button type="button" className="ghost-button" onClick={handleEditCancel}>
+            Cancel
+          </button>
+        </div>
+      </form>
       ) : null}
 
       {deleteTarget ? (

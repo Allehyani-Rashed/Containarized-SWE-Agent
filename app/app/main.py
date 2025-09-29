@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from sqlalchemy import func
 from sqlmodel import Session, select
 
@@ -17,6 +18,7 @@ from .allowlist import normalize_user_allowlist
 from .codex_models import iter_models, valid_model_ids
 from .database import engine, get_session, init_db
 from .models import AuditLog, Project, Task, TaskStatus
+from .project_cache import project_cache_repo_path
 from .integrations import (
     ChatGPTSessionError,
     GitLabPATVerificationError,
@@ -152,6 +154,7 @@ def _collect_project_metrics(
             "allowlist_status": "unknown",
             "active_task_count": 0,
             "total_task_count": 0,
+            "last_cache_commit": None,
         }
 
     if not project_ids:
@@ -197,6 +200,7 @@ def _collect_project_metrics(
             continue
         data["last_task_at"] = _derive_last_activity(task)
         data["last_task_status"] = task.status
+        data["last_cache_commit"] = task.cache_commit
         data["allowlist_status"] = _derive_allowlist_status(task)
         if len(seen) == len(project_ids):
             break
@@ -375,10 +379,19 @@ app.include_router(integrations_router)
 
 
 def _project_to_read(project: Project, extras: Dict[str, Any] | None = None) -> ProjectRead:
+    cache_path = str(project_cache_repo_path(project.gitlab_host, project.gitlab_project_path))
+    repo_exists = Path(cache_path).exists()
+    cache_git_dir = Path(cache_path) / ".git"
+    cache_status = "ready" if cache_git_dir.exists() else ("present" if repo_exists else "missing")
     update_payload: Dict[str, Any] = {
         "codex_token_configured": bool(project.codex_token_encrypted),
         "codex_token_updated_at": project.codex_token_updated_at,
         "repository_url": _build_repository_url(project),
+        "cache_path": cache_path,
+        "cache_status": cache_status,
+        "cache_quota_mb": project.cache_quota_mb,
+        "cache_prune_after_hours": project.cache_prune_after_hours,
+        "last_cache_commit": None,
     }
     if extras:
         update_payload.update(extras)
@@ -387,6 +400,12 @@ def _project_to_read(project: Project, extras: Dict[str, Any] | None = None) -> 
         from_attributes=True,
         update=update_payload,
     )
+
+
+@app.get("/metrics")
+def metrics_endpoint() -> Response:
+    payload = generate_latest()
+    return Response(payload, media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/healthz")
@@ -414,6 +433,17 @@ def create_project(
 ) -> ProjectRead:
     data = payload.model_dump()
     raw_codex_token = (data.pop("codex_token", None) or "").strip()
+
+    for numeric_field in ("cache_quota_mb", "cache_prune_after_hours"):
+        value = data.get(numeric_field)
+        if value is None:
+            continue
+        if value < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{numeric_field.replace('_', ' ')} must be non-negative",
+            )
+
     project = Project(**data)
     if raw_codex_token:
         manager = get_secret_manager()
@@ -462,6 +492,7 @@ def get_project_detail(project_id: int, session: Session = Depends(get_session))
             started_at=task.started_at,
             finished_at=task.finished_at,
             allowlist_size=len(task.allowlist or []),
+            cache_commit=task.cache_commit,
         )
         for task in recent_rows
     ]
@@ -489,15 +520,15 @@ def update_project(
     codex_token_value = payload_data.pop("codex_token", _codex_marker)
     codex_token_provided = codex_token_value is not _codex_marker
 
-    string_fields = {"name", "local_path", "default_branch", "gitlab_host", "gitlab_project_path"}
+    string_fields = {"name", "default_branch", "gitlab_host", "gitlab_project_path"}
     updated_fields: list[str] = []
-    for field, value in payload_data.items():
-        if field not in string_fields:
+    numeric_fields = {"cache_quota_mb", "cache_prune_after_hours"}
+
+    for field in string_fields:
+        if field not in payload_data:
             continue
-        if isinstance(value, str):
-            trimmed = value.strip()
-        else:
-            trimmed = value
+        value = payload_data[field]
+        trimmed = value.strip() if isinstance(value, str) else value
         if trimmed is None or (isinstance(trimmed, str) and not trimmed):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -505,6 +536,19 @@ def update_project(
             )
         if getattr(project, field) != trimmed:
             setattr(project, field, trimmed)
+            updated_fields.append(field)
+
+    for field in numeric_fields:
+        if field not in payload_data:
+            continue
+        value = payload_data[field]
+        if value is not None and value < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{field.replace('_', ' ')} must be non-negative",
+            )
+        if getattr(project, field) != value:
+            setattr(project, field, value)
             updated_fields.append(field)
 
     manager = get_secret_manager()

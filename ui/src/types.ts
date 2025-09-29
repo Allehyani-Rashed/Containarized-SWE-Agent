@@ -1,7 +1,8 @@
+export type CacheStatus = 'missing' | 'present' | 'ready' | string;
+
 export type Project = {
   id: number;
   name: string;
-  local_path: string;
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
@@ -14,6 +15,11 @@ export type Project = {
   allowlist_status: ProjectAllowlistStatus;
   active_task_count: number;
   total_task_count: number;
+  cache_path: string;
+  cache_status: CacheStatus;
+  cache_quota_mb: number | null;
+  cache_prune_after_hours: number | null;
+  last_cache_commit: string | null;
 };
 
 export type ProjectAllowlistStatus = 'unknown' | 'empty' | 'custom';
@@ -28,6 +34,7 @@ export type ProjectTaskSummary = {
   started_at: string | null;
   finished_at: string | null;
   allowlist_size: number;
+  cache_commit: string | null;
 };
 
 export type ProjectDetail = Project & {
@@ -66,6 +73,7 @@ export type Task = {
   codex_invocation: string | null;
   codex_model: string | null;
   abort_requested: boolean;
+  cache_commit: string | null;
 };
 
 export type TaskListResponse = {
@@ -87,21 +95,23 @@ export type TaskLogsSnapshot = {
 
 export type ProjectCreatePayload = {
   name: string;
-  local_path: string;
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
   codex_token: string | null;
+  cache_quota_mb?: number | null;
+  cache_prune_after_hours?: number | null;
 };
 
 export type ProjectUpdatePayload = Partial<{
   name: string;
-  local_path: string;
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
   codex_token: string | null;
   clear_codex_token: boolean;
+  cache_quota_mb: number | null;
+  cache_prune_after_hours: number | null;
   actor: string | null;
 }>;
 

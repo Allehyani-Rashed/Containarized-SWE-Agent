@@ -24,13 +24,13 @@ A local-first playground for the Codex runner: give it a prompt, it sanitizes yo
    ```bash
    ./scripts/quickstart.sh
    ```
-   This builds the Docker runner, installs backend/frontend dependencies, starts the Tinyproxy sidecar, and writes credentials from `.env` into the local database (PAT, Codex token, and optional ChatGPT session bundle).
+   This builds the Docker runner, installs backend/frontend dependencies, starts the Tinyproxy sidecar, writes credentials from `.env` into the local database (PAT, Codex token, and optional ChatGPT session bundle), and clones your repository into `project-cache/<slug>/repo` when the cache is missing. The helper honours `PROJECT_CACHE_ROOT` so the entire cache tree stays under a predictable directory without asking for a local path.
 3. Start the app servers:
    ```bash
    source .venv/bin/activate
    make dev  # FastAPI on :8000, Vite UI on :5173 (re-syncs credentials from .env)
    ```
-4. Open the dashboard at <http://127.0.0.1:5173> (leave `make dev` running). Use the navigation bar to jump between Submit Task, Tasks, Projects, and Settings. The Projects view now surfaces a sortable overview (repository URL, host, default branch, allowlist status, credential signals, and last Codex activity) with quick actions to edit, delete, or open the per-project detail page.
+4. Open the dashboard at <http://127.0.0.1:5173> (leave `make dev` running). Use the navigation bar to jump between Submit Task, Tasks, Projects, and Settings. The Projects view now surfaces a sortable overview (repository URL, host, default branch, allowlist status, credential signals, cache status/commit, and last Codex activity) with quick actions to edit, delete, copy a cache refresh CLI snippet, or open the per-project detail page.
 
 ## Register a Project
 Use the Projects page in the UI for inline validation, credential indicators, and recent activity snapshots, or run the same API call by hand:
@@ -41,7 +41,6 @@ curl -sS -X POST "$BACKEND_API_BASE/projects" \
   -d @- <<'JSON'
 {
   "name": "${PROJECT_NAME}",
-  "local_path": "${PROJECT_LOCAL_PATH}",
   "default_branch": "${PROJECT_DEFAULT_BRANCH}",
   "gitlab_host": "${GITLAB_HOST}",
   "gitlab_project_path": "${GITLAB_PROJECT_PATH}",
@@ -49,7 +48,7 @@ curl -sS -X POST "$BACKEND_API_BASE/projects" \
 }
 JSON
 ```
-If `.env` already describes this project, `quickstart` creates it automatically and `make dev` keeps it in sync. Otherwise, record the `id` from the response (e.g. `export PROJECT_ID=1`) and open `/projects/${PROJECT_ID}` in the UI to review credentials, last activity, and recent task runs from the dedicated detail page.
+Optionally include `cache_quota_mb` (megabytes) or `cache_prune_after_hours` (hours) to bound clone size and schedule background cleanups. If `.env` already describes this project, `quickstart` creates it automatically, bootstraps `project-cache/<slug>/repo`, and `make dev` keeps it in sync. Otherwise, record the `id` from the response (e.g. `export PROJECT_ID=1`) and open `/projects/${PROJECT_ID}` in the UI to review credentials, cache path/status/commit metadata, and recent task runs from the dedicated detail page (which also exposes a copy-ready cache refresh command).
 
 ## Run Your First Task
 ```bash
@@ -74,11 +73,13 @@ Provide `branch_name` and `codex_model` if you want Codex to work off a specific
 - `python3 scripts/test_docker_path.py --disable-docker` – quick smoke test of the workflow.
 - `make threat-scan` – verifies container guardrails and breakout probes.
 - `scripts/codex pat store|clear|import-chatgpt` – manage GitLab PATs or Codex session bundles.
+- `python3 scripts/project_cache.py --refresh --project-id <id>` – repair or refresh cached clones at `project-cache/<slug>/repo` without touching sanitised workspaces.
 
 ## Good To Know
 - Tasks route through Tinyproxy with a deny-by-default allowlist. Adjust long-lived domains in `proxy/base_allowlist.conf`; use task-level `allowlist` entries for one-offs.
 - The runner bundles the real Codex CLI. Skip installation only if you deliberately set `CODEX_ALLOW_STUB=1`.
 - Large build artefacts can bloat sanitized workspaces—prune with `git clean -fdx` or update `.projectsanitize` (legacy `.codexignore`) before long runs.
+- Cache issues are resolved from the deterministic clone under `project-cache/<slug>/repo`; run `scripts/project_cache.py --refresh` (optionally with `--project-id`) to rebuild it instead of editing `.env` or exporting legacy path variables.
 - Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, Codex model, and whether an abort was requested so operator tooling can annotate history without another API call.
 - Use `python3 scripts/migrate_projectsanitize.py [path]` to rename legacy `.codexignore` files; the helper merges entries so sanitized workspaces stay lean.
 - Threat model details and hardening expectations live in `THREAT_MODEL.md`.

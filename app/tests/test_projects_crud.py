@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 class ProjectCrudTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -16,6 +18,7 @@ class ProjectCrudTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
 
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
@@ -32,6 +35,7 @@ class ProjectCrudTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
         self.tmp_dir.cleanup()
 
     def _register_pat(self, client: TestClient) -> None:
@@ -42,19 +46,21 @@ class ProjectCrudTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
 
     def _create_project(self, client: TestClient) -> int:
-        project_root = Path(self.tmp_dir.name) / "project"
+        project_root = project_cache_repo_path("https://gitlab.test", "group/demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         payload = {
             "name": "demo",
-            "local_path": str(project_root),
             "default_branch": "main",
             "gitlab_host": "https://gitlab.test",
             "gitlab_project_path": "group/demo",
         }
         response = client.post("/projects", json=payload)
         self.assertEqual(response.status_code, 201, response.text)
-        return response.json()["id"]
+        project_data = response.json()
+        self.assertEqual(project_data["cache_path"], str(project_root))
+        self.assertIn(project_data["cache_status"], {"present", "ready"})
+        return project_data["id"]
 
     def test_project_detail_includes_recent_tasks_and_metrics(self) -> None:
         with TestClient(self.main.app) as client:

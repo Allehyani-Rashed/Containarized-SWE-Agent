@@ -24,6 +24,8 @@ from typing import Optional
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import ensure_cache_root, project_cache_repo_path
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIVIDER = "-" * 60
@@ -44,7 +46,7 @@ def _bootstrap_app() -> TestClient:
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
-    from app.app import main as main_module
+from app.app import main as main_module
 
     return TestClient(main_module.app)
 
@@ -67,6 +69,37 @@ def _create_sample_project(root: Path) -> Path:
     subprocess.run(["git", "add", "."], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=root, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return root
+
+
+def _seed_project_cache(
+    project_root: Path,
+    *,
+    gitlab_host: str,
+    gitlab_project_path: str,
+) -> Path:
+    """Ensure the canonical cache directory contains a git repository for the project."""
+
+    ensure_cache_root()
+    cache_repo = project_cache_repo_path(gitlab_host, gitlab_project_path).resolve()
+    project_root = project_root.resolve()
+
+    if cache_repo == project_root:
+        return cache_repo
+
+    cache_repo.parent.mkdir(parents=True, exist_ok=True)
+
+    git_dir = cache_repo / ".git"
+    if git_dir.exists():
+        return cache_repo
+
+    if cache_repo.exists():
+        # Avoid clobbering unexpected contents; require manual cleanup instead.
+        raise RuntimeError(
+            f"Cache directory {cache_repo} exists without a git repository. Remove it and retry.",
+        )
+
+    shutil.copytree(project_root, cache_repo, symlinks=True)
+    return cache_repo
 
 
 def _parse_args() -> argparse.Namespace:
@@ -168,6 +201,14 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Disable RUNNER_GIT_DRY_RUN and push to GitLab (requires valid token and allowlisted network)",
     )
+    parser.add_argument(
+        "--exercise-cache",
+        action="store_true",
+        help=(
+            "Exercise cache bootstrap/refresh logs and simulate a failure: "
+            "prints cache path, forces a dry-run bootstrap skip, then corrupts the cache to verify failure handling"
+        ),
+    )
     return parser.parse_args()
 
 
@@ -182,7 +223,6 @@ def _resolve_project_path(args: argparse.Namespace, scratch_dir: Path) -> Path:
 
 def _register_project(
     client: TestClient,
-    project_root: Path,
     gitlab_token: str,
     *,
     gitlab_host: str,
@@ -191,12 +231,10 @@ def _register_project(
 ) -> int:
     payload = {
         "name": "docker-demo-project",
-        "local_path": str(project_root),
         "default_branch": "main",
         "gitlab_host": gitlab_host,
         "gitlab_project_path": gitlab_project_path,
     }
-    payload["gitlab_token"] = gitlab_token
     if codex_token:
         payload["codex_token"] = codex_token
     response = client.post("/projects", json=payload)
@@ -359,7 +397,6 @@ def main() -> None:
                     project_root = _resolve_project_path(args, scratch_dir)
                     project_id = _register_project(
                         client,
-                        project_root,
                         args.gitlab_token,
                         gitlab_host=args.gitlab_host,
                         gitlab_project_path=args.gitlab_project_path,
@@ -373,12 +410,64 @@ def main() -> None:
                             path=args.gitlab_project_path,
                         )
                     )
+                    if project_root is not None:
+                        try:
+                            cache_repo = _seed_project_cache(
+                                project_root,
+                                gitlab_host=args.gitlab_host,
+                                gitlab_project_path=args.gitlab_project_path,
+                            )
+                        except RuntimeError as cache_error:
+                            raise RuntimeError(
+                                f"Failed to seed project cache for project {project_id}: {cache_error}",
+                            ) from cache_error
+                        else:
+                            print(f"Seeded project cache at {cache_repo}")
                 else:
                     print(f"Using existing project {project_id} for new task")
                     if args.codex_token:
                         print("warning: --codex-token ignored when reusing an existing project")
             elif project_id is not None:
                 print(f"Using existing project {project_id} for inspection")
+
+            if args.exercise_cache:
+                # Probe cache bootstrap/refresh paths and an intentional failure
+                from app.app.project_cache import project_cache_repo_path
+
+                repo_path = project_cache_repo_path(args.gitlab_host, args.gitlab_project_path)
+                print(f"Cache path for project: {repo_path}")
+                # Force a dry-run bootstrap message by ensuring directory exists without .git
+                repo_path.parent.mkdir(parents=True, exist_ok=True)
+                if not repo_path.exists():
+                    repo_path.mkdir(parents=True)
+                # Invoke refresh in dry-run to capture skip messages
+                from app.app.project_cache import refresh_project_cache, ProjectCacheError
+                try:
+                    refreshed = refresh_project_cache(
+                        repo_path,
+                        "main",
+                        dry_run=True,
+                        log_fn=lambda m: print(f"[cache] {m}"),
+                        project_identifier=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
+                    )
+                    print(f"Dry-run refresh result: {refreshed}")
+                except ProjectCacheError as exc:
+                    print(f"Expected dry-run cache warning: {exc}")
+                # Simulate corruption and ensure a hard failure occurs
+                corrupt_flag = repo_path / ".git"
+                if not corrupt_flag.exists():
+                    corrupt_flag.mkdir(parents=True, exist_ok=True)
+                (corrupt_flag / "BROKEN").write_text("1", encoding="utf-8")
+                try:
+                    refresh_project_cache(
+                        repo_path,
+                        "main",
+                        dry_run=False,
+                        log_fn=lambda m: print(f"[cache] {m}"),
+                        project_identifier=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
+                    )
+                except ProjectCacheError as exc:
+                    print(f"Intentional cache refresh failure captured: {exc}")
 
             if args.task_id is not None:
                 task_id = args.task_id

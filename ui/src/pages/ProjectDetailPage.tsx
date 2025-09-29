@@ -23,6 +23,7 @@ function ProjectDetailPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patStatus, setPatStatus] = useState(initialPatStatus);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const fallbackProject = useMemo(() => {
     return projects.find((project) => project.id === numericId) ?? null;
@@ -36,6 +37,7 @@ function ProjectDetailPage() {
         setError('Project id is invalid');
         return;
       }
+      setNotice(null);
       setLoading(true);
       setError(null);
       try {
@@ -89,6 +91,21 @@ function ProjectDetailPage() {
 
   const summary = detail ?? fallbackProject;
 
+  const copyRefreshCommand = async (projectId: number, projectName: string) => {
+    const command = `python3 scripts/project_cache.py --refresh --project-id ${projectId}`;
+    setNotice(null);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(command);
+        setNotice(`Cache refresh command copied for ${projectName}.`);
+        return;
+      }
+    } catch (clipboardError) {
+      setError((prev) => prev ?? 'Unable to copy refresh command automatically.');
+    }
+    window.prompt('Copy the cache refresh command and run it from the repository root:', command);
+  };
+
   return (
     <div className="page">
       <header className="page-header">
@@ -101,6 +118,7 @@ function ProjectDetailPage() {
       </button>
 
       {error && <div className="error-banner">{error}</div>}
+      {notice && <div className="notice notice-success">{notice}</div>}
 
       {loading && <div className="notice">Loading project information…</div>}
 
@@ -121,16 +139,48 @@ function ProjectDetailPage() {
               </dd>
             </div>
             <div>
-              <dt>Local Path</dt>
-              <dd>{summary.local_path}</dd>
-            </div>
-            <div>
               <dt>GitLab Host</dt>
               <dd>{summary.gitlab_host || '—'}</dd>
             </div>
             <div>
               <dt>Default Branch</dt>
               <dd>{summary.default_branch}</dd>
+            </div>
+            <div>
+              <dt>Cache Path</dt>
+              <dd>{summary.cache_path}</dd>
+            </div>
+            <div>
+              <dt>Cache Status</dt>
+              <dd>
+                {summary.cache_status === 'ready' ? (
+                  <span className="status status-done">Ready</span>
+                ) : summary.cache_status === 'present' ? (
+                  <span className="status status-running">Present</span>
+                ) : summary.cache_status === 'missing' ? (
+                  <span className="status status-failed">Missing</span>
+                ) : (
+                  <span className="status status-running">{summary.cache_status}</span>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Last Cache Commit</dt>
+              <dd>{summary.last_cache_commit ? summary.last_cache_commit.slice(0, 12) : '—'}</dd>
+            </div>
+            <div>
+              <dt>Cache Quota</dt>
+              <dd>
+                {summary.cache_quota_mb !== null ? `${summary.cache_quota_mb} MB` : 'Unlimited'}
+              </dd>
+            </div>
+            <div>
+              <dt>Prune Interval</dt>
+              <dd>
+                {summary.cache_prune_after_hours !== null
+                  ? `${summary.cache_prune_after_hours} hours`
+                  : 'Disabled'}
+              </dd>
             </div>
             <div>
               <dt>Allowlist</dt>
@@ -159,6 +209,13 @@ function ProjectDetailPage() {
               onClick={() => navigate('/tasks/submit', { state: { projectId: summary.id } })}
             >
               Submit Task
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => copyRefreshCommand(summary.id, summary.name)}
+            >
+              Copy Refresh CLI
             </button>
           </div>
         </section>
@@ -224,6 +281,7 @@ function ProjectDetailPage() {
                     <th>Status</th>
                     <th>Branch</th>
                     <th>Model</th>
+                    <th>Cache Commit</th>
                     <th>Allowlist Entries</th>
                     <th>Created</th>
                     <th>Finished</th>
@@ -238,6 +296,7 @@ function ProjectDetailPage() {
                       </td>
                       <td>{task.branch ?? 'Auto-generated'}</td>
                       <td>{task.codex_model ?? 'Default'}</td>
+                      <td>{task.cache_commit ? task.cache_commit.slice(0, 12) : '—'}</td>
                       <td>{task.allowlist_size}</td>
                       <td>{formatTimestamp(task.created_at)}</td>
                       <td>{formatTimestamp(task.finished_at)}</td>

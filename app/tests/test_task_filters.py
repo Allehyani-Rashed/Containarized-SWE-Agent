@@ -9,6 +9,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, select
 
+from app.app.project_cache import project_cache_repo_path
+
 
 class TaskListFilterTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -16,6 +18,7 @@ class TaskListFilterTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'filters.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module_name in list(sys.modules.keys()):
             if module_name.startswith("app.app"):
                 sys.modules.pop(module_name)
@@ -29,21 +32,24 @@ class TaskListFilterTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
 
     def _create_project(self, client: TestClient) -> int:
-        project_root = Path(self.tmp_dir.name) / "filters-project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/filters-demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("filters demo\n", encoding="utf-8")
         payload = {
             "name": "filters-demo",
-            "local_path": str(project_root),
             "default_branch": "main",
             "gitlab_host": "https://gitlab.example.com",
             "gitlab_project_path": "example/filters-demo",
         }
         response = client.post("/projects", json=payload)
         self.assertEqual(response.status_code, 201, response.text)
-        return response.json()["id"]
+        project_body = response.json()
+        self.assertEqual(project_body["cache_path"], str(project_root))
+        self.assertIn(project_body["cache_status"], {"present", "ready"})
+        return project_body["id"]
 
     def _seed_tasks(self, client: TestClient, project_id: int) -> None:
         rotate_resp = client.post("/integrations/pat", json={"token": "filters-pat"})

@@ -31,7 +31,6 @@ class EnvConfig:
     gitlab_pat: Optional[str]
     codex_token: Optional[str]
     project_name: Optional[str]
-    project_local_path: Optional[str]
     project_default_branch: Optional[str]
     gitlab_host: Optional[str]
     gitlab_project_path: Optional[str]
@@ -100,8 +99,12 @@ def _read_session_bundle(config: EnvConfig, repo_root: Path) -> Optional[str]:
 
 def _locate_project(session: Session, config: EnvConfig) -> Optional[Project]:
     statement = None
-    if config.project_local_path:
-        statement = select(Project).where(Project.local_path == config.project_local_path)
+    if config.gitlab_host and config.gitlab_project_path:
+        statement = (
+            select(Project)
+            .where(Project.gitlab_host == config.gitlab_host)
+            .where(Project.gitlab_project_path == config.gitlab_project_path)
+        )
     elif config.project_name:
         statement = select(Project).where(Project.name == config.project_name)
     if statement is None:
@@ -116,7 +119,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
     if project is None:
         required_fields = [
             config.project_name,
-            config.project_local_path,
             config.project_default_branch,
             config.gitlab_host,
             config.gitlab_project_path,
@@ -124,7 +126,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
         if all(required_fields):
             project = Project(
                 name=config.project_name,  # type: ignore[arg-type]
-                local_path=config.project_local_path,  # type: ignore[arg-type]
                 default_branch=config.project_default_branch,  # type: ignore[arg-type]
                 gitlab_host=config.gitlab_host,  # type: ignore[arg-type]
                 gitlab_project_path=config.gitlab_project_path,  # type: ignore[arg-type]
@@ -142,7 +143,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
     updated = False
     fields = {
         "name": config.project_name,
-        "local_path": config.project_local_path,
         "default_branch": config.project_default_branch,
         "gitlab_host": config.gitlab_host,
         "gitlab_project_path": config.gitlab_project_path,

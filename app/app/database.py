@@ -65,6 +65,8 @@ def _ensure_project_columns(db_engine) -> None:
         "gitlab_token": "ALTER TABLE project ADD COLUMN gitlab_token VARCHAR",
         "codex_token_encrypted": "ALTER TABLE project ADD COLUMN codex_token_encrypted VARCHAR",
         "codex_token_updated_at": "ALTER TABLE project ADD COLUMN codex_token_updated_at DATETIME",
+        "cache_quota_mb": "ALTER TABLE project ADD COLUMN cache_quota_mb INTEGER",
+        "cache_prune_after_hours": "ALTER TABLE project ADD COLUMN cache_prune_after_hours INTEGER",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}
@@ -88,6 +90,7 @@ def _ensure_task_columns(db_engine) -> None:
         "codex_invocation": "ALTER TABLE task ADD COLUMN codex_invocation VARCHAR",
         "codex_model": "ALTER TABLE task ADD COLUMN codex_model VARCHAR",
         "abort_requested": "ALTER TABLE task ADD COLUMN abort_requested BOOLEAN NOT NULL DEFAULT 0",
+        "cache_commit": "ALTER TABLE task ADD COLUMN cache_commit VARCHAR",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}
@@ -97,6 +100,7 @@ def _ensure_task_columns(db_engine) -> None:
     with db_engine.begin() as connection:
         for ddl in pending.values():
             connection.execute(text(ddl))
+
 
 
 def _ensure_integration_columns(db_engine) -> None:

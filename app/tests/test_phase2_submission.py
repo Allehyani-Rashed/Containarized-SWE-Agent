@@ -8,6 +8,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 def _initialize_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -24,6 +26,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{self.db_path}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -38,10 +41,11 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
         self.tmp_dir.cleanup()
 
     def _prepare_project(self) -> tuple[Path, int]:
-        project_root = Path(self.tmp_dir.name) / "project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/phase2")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("phase2 demo\n", encoding="utf-8")
         (project_root / "app.py").write_text("print('hello')\n", encoding="utf-8")
@@ -52,14 +56,16 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(rotate_resp.status_code, 200)
             project_payload = {
                 "name": "phase2-project",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/phase2",
             }
             project_resp = client.post("/projects", json=project_payload)
             self.assertEqual(project_resp.status_code, 201)
-            project_id = project_resp.json()["id"]
+            project_data = project_resp.json()
+            self.assertEqual(project_data["cache_path"], str(project_root))
+            self.assertEqual(project_data["cache_status"], "ready")
+            project_id = project_data["id"]
         return project_root, project_id
 
     def test_task_records_branch_and_model(self) -> None:

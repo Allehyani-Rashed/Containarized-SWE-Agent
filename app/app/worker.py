@@ -22,6 +22,15 @@ from .integrations import (
     get_gitlab_pat_token,
 )
 from .models import Project, Task, TaskStatus
+from .project_cache import (
+    ProjectCacheError,
+    bootstrap_project_cache,
+    enforce_cache_policy,
+    project_cache_identifier,
+    project_cache_repo_path,
+    refresh_project_cache,
+    snapshot_project_cache,
+)
 from .proxy_runtime import ensure_proxy_stack
 from .sanitizer import sanitize_workspace
 from .secrets import SecretError, get_secret_manager
@@ -48,6 +57,12 @@ def _build_mr_title(task_id: int, prompt: str) -> str:
     if len(prompt_snippet) > 60:
         prompt_snippet = f"{prompt_snippet[:57]}..."
     return f"Codex Task {task_id}: {prompt_snippet}"
+
+
+def _is_truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 class TaskQueueManager:
@@ -176,7 +191,8 @@ class TaskQueueManager:
                     message="Abort requested before task start; skipping execution",
                 ):
                     return
-                project_root = Path(project.local_path).expanduser()
+                project_root = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
+                cache_identifier = project_cache_identifier(project.gitlab_host, project.gitlab_project_path)
                 task.status = TaskStatus.running
                 task.started_at = datetime.now(timezone.utc)
                 task_prompt = task.prompt or ""
@@ -322,13 +338,98 @@ class TaskQueueManager:
             if codex_model:
                 self._append_log(task_id, f"Codex model override: {codex_model}")
 
-            self._append_log(task_id, "Task started; sanitizing workspace")
             if project_root is None:
                 self._append_log(task_id, "Unable to determine project root; aborting")
                 return
 
+            dry_run_enabled = _is_truthy(os.environ.get("RUNNER_GIT_DRY_RUN"))
+            effective_gitlab_token = (gitlab_token or "").strip() or (project.gitlab_token or "").strip()
+
+            self._append_log(task_id, f"Ensuring project cache {cache_identifier} at {project_root}")
             try:
-                sanitized_path = sanitize_workspace(project_root, task_id)
+                bootstrap_project_cache(
+                    project_root,
+                    gitlab_host=gitlab_host,
+                    gitlab_project_path=gitlab_project_path,
+                    default_branch=target_branch,
+                    gitlab_token=effective_gitlab_token or None,
+                    dry_run=dry_run_enabled,
+                    log_fn=lambda message: self._append_log(task_id, message),
+                )
+            except ProjectCacheError as exc:
+                self._append_log(task_id, str(exc))
+                with Session(self._engine) as session:
+                    task = session.get(Task, task_id)
+                    if task is None:
+                        return
+                    task.status = TaskStatus.failed
+                    task.finished_at = datetime.now(timezone.utc)
+                    session.add(task)
+                    session.commit()
+                self._mark_complete(task_id)
+                return
+
+            commit_hash: str | None = None
+
+            self._append_log(task_id, f"Refreshing project cache at {project_root}")
+            try:
+                commit_hash = refresh_project_cache(
+                    project_root,
+                    target_branch,
+                    gitlab_token=effective_gitlab_token or None,
+                    dry_run=dry_run_enabled,
+                    log_fn=lambda message: self._append_log(task_id, message),
+                    project_identifier=cache_identifier,
+                )
+                enforce_cache_policy(
+                    project_root,
+                    quota_mb=project.cache_quota_mb,
+                    prune_after_hours=project.cache_prune_after_hours,
+                    dry_run=dry_run_enabled,
+                    log_fn=lambda message: self._append_log(task_id, message),
+                )
+                snapshot_path = snapshot_project_cache(
+                    project_root,
+                    commit_hash=commit_hash or "",
+                    branch=target_branch or project.default_branch or "",
+                    dry_run=dry_run_enabled,
+                    log_fn=lambda message: self._append_log(task_id, message),
+                )
+                if snapshot_path is not None and not dry_run_enabled:
+                    self._append_log(task_id, f"Cache snapshot stored at {snapshot_path}")
+            except ProjectCacheError as exc:
+                self._append_log(task_id, str(exc))
+                with Session(self._engine) as session:
+                    task = session.get(Task, task_id)
+                    if task is None:
+                        return
+                    task.status = TaskStatus.failed
+                    task.finished_at = datetime.now(timezone.utc)
+                    session.add(task)
+                    session.commit()
+                self._mark_complete(task_id)
+                return
+
+            if commit_hash and commit_hash not in {"dry-run-skip"}:
+                short_hash = commit_hash[:12]
+                revision_note = f"{target_branch}@{short_hash} ({commit_hash})"
+            elif commit_hash == "dry-run-skip":
+                revision_note = "dry-run skip (no commit)"
+            else:
+                revision_note = "revision unavailable"
+
+            self._append_log(
+                task_id,
+                f"Task started; sanitizing workspace from cache {cache_identifier} at {project_root} using {revision_note}",
+            )
+
+            try:
+                sanitized_path = sanitize_workspace(
+                    project_root,
+                    task_id,
+                    default_branch=target_branch,
+                    gitlab_token=effective_gitlab_token or None,
+                )
             except Exception as exc:  # noqa: BLE001 - bubble failure to task logs/state
                 self._append_log(task_id, f"Workspace sanitization failed: {exc}")
                 with Session(self._engine) as session:
@@ -348,6 +449,7 @@ class TaskQueueManager:
                 if task is None:
                     return
                 task.workspace_path = str(sanitized_path)
+                task.cache_commit = commit_hash
                 session.add(task)
                 session.commit()
                 if self._abort_if_requested(

@@ -9,6 +9,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 def _initialize_git_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -25,6 +27,7 @@ class Phase5NegativeTokenTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'test.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -41,6 +44,7 @@ class Phase5NegativeTokenTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
         if self.original_path:
             os.environ["PATH"] = self.original_path
         else:
@@ -70,7 +74,7 @@ exec "{real_git}" "$@"
         os.environ["PATH"] = f"{script_path.parent}:{self.original_path}"
 
     def _build_sample_project(self) -> Path:
-        project_root = Path(self.tmp_dir.name) / "phase5-project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("phase5 demo\n", encoding="utf-8")
         (project_root / "main.txt").write_text("hello\n", encoding="utf-8")
@@ -90,14 +94,16 @@ exec "{real_git}" "$@"
 
             project_payload = {
                 "name": "phase5-negative",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/demo",
             }
             project_resp = client.post("/projects", json=project_payload)
             self.assertEqual(project_resp.status_code, 201)
-            project_id = project_resp.json()["id"]
+            project_body = project_resp.json()
+            self.assertEqual(project_body["cache_path"], str(project_root))
+            self.assertEqual(project_body["cache_status"], "ready")
+            project_id = project_body["id"]
 
             task_resp = client.post(
                 "/tasks",

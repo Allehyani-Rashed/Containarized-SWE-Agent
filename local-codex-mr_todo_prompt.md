@@ -42,7 +42,7 @@ Implement an open-source **local-first** tool that:
 - **Proxy sidecar**: Tinyproxy (default‑deny allowlist)
 
 ## API (to implement in the local backend)
-- `POST /projects` – register `{ name, local_path, default_branch, gitlab_host, gitlab_project_path }`
+- `POST /projects` – register `{ name, default_branch, gitlab_host, gitlab_project_path, cache_quota_mb?, cache_prune_after_hours? }`
 - `GET /projects`
 - `POST /tasks` – `{ project_id, prompt, allowlist?: string[] }`
 - `GET /tasks/:id`

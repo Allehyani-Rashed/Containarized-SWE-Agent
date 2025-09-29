@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$ROOT_DIR/.env"
 DEFAULT_PY_BIN="python3.11"
 SYNC_SCRIPT="$ROOT_DIR/scripts/sync_credentials.py"
+PROJECT_CACHE_LAST_PATH=""
 
 usage() {
   cat <<'USAGE'
@@ -180,6 +181,97 @@ ensure_docker_setup() {
   (cd "$ROOT_DIR" && docker compose up -d codex-egress-proxy)
 }
 
+resolve_python() {
+  if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+    echo "$ROOT_DIR/.venv/bin/python"
+  else
+    echo "$PYTHON_BIN"
+  fi
+}
+
+resolve_project_cache_repo_path() {
+  local python_exec
+  python_exec=$(resolve_python)
+  "$python_exec" - <<'PY'
+import os
+from app.app.project_cache import project_cache_repo_path
+
+host = os.environ.get("GITLAB_HOST")
+path = os.environ.get("GITLAB_PROJECT_PATH")
+if not host or not path:
+    raise SystemExit(1)
+print(project_cache_repo_path(host, path), end="")
+PY
+}
+
+build_git_remote_url() {
+  local python_exec
+  python_exec=$(resolve_python)
+  "$python_exec" - <<'PY'
+import os
+from urllib.parse import quote, urlparse, urlunparse
+
+host = os.environ.get("GITLAB_HOST")
+path = os.environ.get("GITLAB_PROJECT_PATH")
+if not host or not path:
+    raise SystemExit(1)
+base = host.rstrip("/") + "/" + path.strip("/") + ".git"
+pat = os.environ.get("GITLAB_PAT")
+if pat:
+    parsed = urlparse(base)
+    token = quote(pat, safe="")
+    netloc = f"oauth2:{token}@{parsed.netloc}"
+    url = urlunparse((parsed.scheme, netloc, parsed.path, "", "", ""))
+else:
+    url = base
+print(url, end="")
+PY
+}
+
+ensure_project_cache_clone() {
+  local host="${GITLAB_HOST:-}"
+  local project_path="${GITLAB_PROJECT_PATH:-}"
+  local branch="${PROJECT_DEFAULT_BRANCH:-}"
+  if [[ -z "$host" || -z "$project_path" ]]; then
+    echo "warning: skipping project cache bootstrap (set GITLAB_HOST and GITLAB_PROJECT_PATH)" >&2
+    return
+  fi
+  if [[ -z "$branch" ]]; then
+    echo "warning: PROJECT_DEFAULT_BRANCH not set; defaulting to 'main'" >&2
+    branch="main"
+  fi
+
+  local repo_dir
+  if ! repo_dir=$(resolve_project_cache_repo_path); then
+    echo "warning: unable to resolve project cache path; skipping clone" >&2
+    return
+  fi
+
+  PROJECT_CACHE_LAST_PATH="$repo_dir"
+
+  if [[ -d "$repo_dir/.git" ]]; then
+    echo "project cache already present at $repo_dir"
+    echo "  • refresh with 'python3 scripts/project_cache.py --refresh' if it looks stale"
+    return
+  fi
+
+  if [[ -z "${GITLAB_PAT:-}" ]]; then
+    echo "warning: GITLAB_PAT is empty; skipping cache bootstrap" >&2
+    return
+  fi
+
+  local remote_url
+  if ! remote_url=$(build_git_remote_url); then
+    echo "warning: failed to construct Git remote URL; skipping cache bootstrap" >&2
+    return
+  fi
+
+  mkdir -p "$(dirname "$repo_dir")"
+  echo "Bootstrapping project cache at $repo_dir"
+  GIT_TERMINAL_PROMPT=0 git clone --branch "$branch" --single-branch "$remote_url" "$repo_dir"
+  echo "  • rerun 'python3 scripts/project_cache.py --refresh' to repair this cache later"
+}
+
 run_setup() {
   ensure_projectsanitize
   ensure_python_env
@@ -197,6 +289,8 @@ run_setup() {
     fi
   fi
 
+  ensure_project_cache_clone
+
   cat <<'SUMMARY'
 
 Bootstrap complete ✅
@@ -206,6 +300,16 @@ Next steps:
   3. in another terminal, follow the Quickstart section in README.md to register a project and submit a task
 
 SUMMARY
+
+  if [[ -n "$PROJECT_CACHE_LAST_PATH" ]]; then
+    cat <<SUMMARY_EXTRA
+
+Cache tips:
+  • Clones live at $PROJECT_CACHE_LAST_PATH (under PROJECT_CACHE_ROOT)
+  • Use 'python3 scripts/project_cache.py --refresh' to rebuild the cache if it drifts
+
+SUMMARY_EXTRA
+  fi
 }
 
 case ${1:-setup} in

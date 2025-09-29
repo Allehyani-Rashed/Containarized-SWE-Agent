@@ -12,6 +12,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 class CodexCredentialTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -19,6 +21,7 @@ class CodexCredentialTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'creds.db'}"
         key_material = base64.urlsafe_b64encode(b"test-secret-fernet-key-for-cdx!!").decode("utf-8")
         os.environ["APP_SECRET_KEY"] = key_material
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -40,6 +43,7 @@ class CodexCredentialTests(unittest.TestCase):
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("APP_SECRET_KEY", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         self.secrets.reset_secret_manager()
         workspaces_dir = getattr(self, "repo_root", Path(__file__).resolve().parents[2]) / "workspaces"
@@ -58,7 +62,7 @@ class CodexCredentialTests(unittest.TestCase):
 
     def test_project_creation_encrypts_codex_token(self) -> None:
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
-        project_root = Path(self.tmp_dir.name) / "repo"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/cred-demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         (project_root / ".git").mkdir(parents=True, exist_ok=True)
@@ -69,7 +73,6 @@ class CodexCredentialTests(unittest.TestCase):
             self.assertEqual(rotate_resp.status_code, 200)
             payload = {
                 "name": "cred-demo",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/cred-demo",
@@ -80,6 +83,8 @@ class CodexCredentialTests(unittest.TestCase):
             body = response.json()
             self.assertTrue(body["codex_token_configured"])
             self.assertIsNotNone(body["codex_token_updated_at"])
+            self.assertEqual(body["cache_path"], str(project_root))
+            self.assertEqual(body["cache_status"], "ready")
 
         from sqlmodel import Session, select
         from app.app.database import engine
@@ -98,7 +103,10 @@ class CodexCredentialTests(unittest.TestCase):
 
     def test_missing_codex_token_aborts_when_docker_enabled(self) -> None:
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
-        project_root = Path(self.tmp_dir.name) / "repo-missing-token"
+        project_root = project_cache_repo_path(
+            "https://gitlab.example.com",
+            "example/cred-missing-token",
+        )
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         (project_root / ".git").mkdir(parents=True, exist_ok=True)
@@ -108,14 +116,16 @@ class CodexCredentialTests(unittest.TestCase):
             self.assertEqual(rotate_resp.status_code, 200)
             payload = {
                 "name": "cred-missing-token",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/cred-missing-token",
             }
             response = client.post("/projects", json=payload)
             self.assertEqual(response.status_code, 201)
-            project_id = response.json()["id"]
+            project_body = response.json()
+            self.assertEqual(project_body["cache_path"], str(project_root))
+            self.assertEqual(project_body["cache_status"], "ready")
+            project_id = project_body["id"]
 
             task_resp = client.post(
                 "/tasks",
@@ -157,7 +167,10 @@ class CodexCredentialTests(unittest.TestCase):
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
         self.addCleanup(lambda: os.environ.pop("RUNNER_GIT_DRY_RUN", None))
-        project_root = Path(self.tmp_dir.name) / "repo-session"
+        project_root = project_cache_repo_path(
+            "https://gitlab.example.com",
+            "example/cred-session-demo",
+        )
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         (project_root / ".git").mkdir(parents=True, exist_ok=True)
@@ -182,14 +195,16 @@ class CodexCredentialTests(unittest.TestCase):
 
             payload = {
                 "name": "cred-session-demo",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/cred-session-demo",
             }
             response = client.post("/projects", json=payload)
             self.assertEqual(response.status_code, 201)
-            project_id = response.json()["id"]
+            project_body = response.json()
+            self.assertEqual(project_body["cache_path"], str(project_root))
+            self.assertEqual(project_body["cache_status"], "ready")
+            project_id = project_body["id"]
 
             task_resp = client.post(
                 "/tasks",

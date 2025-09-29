@@ -9,12 +9,15 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 class PatLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'pat.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -29,22 +32,25 @@ class PatLifecycleTests(unittest.TestCase):
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
 
     def _register_project(self, client: TestClient) -> int:
-        project_root = Path(self.tmp_dir.name) / "project"
+        project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         (project_root / ".git").mkdir(parents=True, exist_ok=True)
         payload = {
             "name": "demo",
-            "local_path": str(project_root),
             "default_branch": "main",
             "gitlab_host": "https://gitlab.example.com",
             "gitlab_project_path": "example/demo",
         }
         response = client.post("/projects", json=payload)
         self.assertEqual(response.status_code, 201)
-        return response.json()["id"]
+        project_body = response.json()
+        self.assertEqual(project_body["cache_path"], str(project_root))
+        self.assertEqual(project_body["cache_status"], "ready")
+        return project_body["id"]
 
     def test_task_creation_blocked_without_pat(self) -> None:
         with TestClient(self.main.app) as client:

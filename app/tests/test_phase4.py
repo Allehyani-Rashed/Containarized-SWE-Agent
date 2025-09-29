@@ -8,6 +8,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from app.app.project_cache import project_cache_repo_path
+
 
 def _initialize_git_repo(path: Path) -> None:
     subprocess.run(["git", "init", "-b", "main"], cwd=path, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -23,6 +25,7 @@ class Phase4CodexIntegrationTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'test.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -38,10 +41,11 @@ class Phase4CodexIntegrationTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
 
     def test_codex_placeholder_creates_change_log(self) -> None:
         with TestClient(self.main.app) as client:
-            project_root = Path(self.tmp_dir.name) / "phase4-project"
+            project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
             project_root.mkdir(parents=True, exist_ok=True)
             (project_root / "README.md").write_text("phase4 demo\n", encoding="utf-8")
             _initialize_git_repo(project_root)
@@ -54,7 +58,6 @@ class Phase4CodexIntegrationTests(unittest.TestCase):
 
             project_payload = {
                 "name": "phase4-demo",
-                "local_path": str(project_root),
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/demo",
@@ -62,6 +65,8 @@ class Phase4CodexIntegrationTests(unittest.TestCase):
             project_resp = client.post("/projects", json=project_payload)
             self.assertEqual(project_resp.status_code, 201)
             project_data = project_resp.json()
+            self.assertEqual(project_data["cache_path"], str(project_root))
+            self.assertEqual(project_data["cache_status"], "ready")
 
             task_resp = client.post(
                 "/tasks",

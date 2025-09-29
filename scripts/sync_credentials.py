@@ -66,7 +66,6 @@ def main() -> int:
         gitlab_pat=env_values.get("GITLAB_PAT"),
         codex_token=env_values.get("CODEX_ACCESS_TOKEN"),
         project_name=env_values.get("PROJECT_NAME"),
-        project_local_path=env_values.get("PROJECT_LOCAL_PATH"),
         project_default_branch=env_values.get("PROJECT_DEFAULT_BRANCH"),
         gitlab_host=env_values.get("GITLAB_HOST"),
         gitlab_project_path=env_values.get("GITLAB_PROJECT_PATH"),

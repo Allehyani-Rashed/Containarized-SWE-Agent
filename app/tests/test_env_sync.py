@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.app.project_cache import project_cache_repo_path
+
 
 class EnvSyncTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -12,6 +14,7 @@ class EnvSyncTests(unittest.TestCase):
         db_path = Path(self.tmp_dir.name) / "env-sync.db"
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["APP_SECRET_KEY"] = base64.urlsafe_b64encode(b"env-sync-secret-key-32-bytes-ABC").decode()
+        os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -29,6 +32,7 @@ class EnvSyncTests(unittest.TestCase):
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("APP_SECRET_KEY", None)
+        os.environ.pop("PROJECT_CACHE_ROOT", None)
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -38,7 +42,6 @@ class EnvSyncTests(unittest.TestCase):
             gitlab_pat="glpat-test-token",
             codex_token="sk-test-token",
             project_name="demo",
-            project_local_path=str(Path(self.tmp_dir.name) / "project"),
             project_default_branch="main",
             gitlab_host="https://gitlab.example.com",
             gitlab_project_path="example/demo",
@@ -69,6 +72,9 @@ class EnvSyncTests(unittest.TestCase):
             manager = get_secret_manager()
             decrypted = manager.decrypt(project.codex_token_encrypted)
             self.assertEqual(decrypted, "sk-test-token")
+            expected_path = project_cache_repo_path("https://gitlab.example.com", "example/demo")
+            computed_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
+            self.assertEqual(computed_path, expected_path)
 
     def test_parse_env_file_handles_quotes(self) -> None:
         env_file = Path(self.tmp_dir.name) / "sample.env"
@@ -95,7 +101,6 @@ class EnvSyncTests(unittest.TestCase):
             gitlab_pat=None,
             codex_token=None,
             project_name=None,
-            project_local_path=None,
             project_default_branch=None,
             gitlab_host=None,
             gitlab_project_path=None,

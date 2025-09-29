@@ -10,7 +10,6 @@ from .models import TaskStatus
 
 class ProjectBase(SQLModel):
     name: str
-    local_path: str
     default_branch: str
     gitlab_host: str
     gitlab_project_path: str
@@ -18,6 +17,8 @@ class ProjectBase(SQLModel):
 
 class ProjectCreate(ProjectBase):
     codex_token: Optional[str] = None
+    cache_quota_mb: Optional[int] = None
+    cache_prune_after_hours: Optional[int] = None
 
 
 class ProjectRead(ProjectBase):
@@ -31,17 +32,23 @@ class ProjectRead(ProjectBase):
     allowlist_status: str = "unknown"
     active_task_count: int = 0
     total_task_count: int = 0
+    cache_path: str
+    cache_status: str = "unknown"
+    cache_quota_mb: Optional[int] = None
+    cache_prune_after_hours: Optional[int] = None
+    last_cache_commit: Optional[str] = None
 
 
 class ProjectUpdate(SQLModel):
     name: Optional[str] = None
-    local_path: Optional[str] = None
     default_branch: Optional[str] = None
     gitlab_host: Optional[str] = None
     gitlab_project_path: Optional[str] = None
     codex_token: Optional[str | None] = Field(default=None)
     clear_codex_token: Optional[bool] = Field(default=None)
     actor: Optional[str] = None
+    cache_quota_mb: Optional[int] = None
+    cache_prune_after_hours: Optional[int] = None
 
 
 class ProjectDeleteRequest(SQLModel):
@@ -58,6 +65,7 @@ class ProjectTaskSummary(SQLModel):
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
     allowlist_size: int
+    cache_commit: Optional[str] = None
 
 
 class ProjectDetail(ProjectRead):
@@ -125,6 +133,7 @@ class TaskRead(SQLModel):
     codex_invocation: Optional[str]
     codex_model: Optional[str]
     abort_requested: bool
+    cache_commit: Optional[str]
 
 
 class TaskListResponse(SQLModel):
