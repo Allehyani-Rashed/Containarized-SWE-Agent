@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AppShell from './components/AppShell';
 import { ProjectsProvider } from './hooks/useProjectsData';
+import { PatStatusProvider } from './hooks/usePatStatus';
 import ProjectsPage from './pages/ProjectsPage';
 import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
@@ -14,9 +15,11 @@ function App() {
       <Route
         path="/"
         element={(
-          <ProjectsProvider>
-            <AppShell />
-          </ProjectsProvider>
+          <PatStatusProvider>
+            <ProjectsProvider>
+              <AppShell />
+            </ProjectsProvider>
+          </PatStatusProvider>
         )}
       >
         <Route index element={<TaskSubmitPage />} />

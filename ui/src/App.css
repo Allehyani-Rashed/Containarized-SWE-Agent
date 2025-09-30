@@ -633,12 +633,14 @@ button:disabled {
   align-items: stretch;
   justify-content: flex-end;
   z-index: 1000;
+  pointer-events: none;
 }
 
 .task-drawer-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.65);
+  background: rgba(15, 23, 42, 0.45);
+  pointer-events: none;
 }
 
 .task-drawer-panel {
@@ -652,6 +654,7 @@ button:disabled {
   gap: 1.5rem;
   box-shadow: -10px 0 40px rgba(15, 23, 42, 0.6);
   overflow-y: auto;
+  pointer-events: auto;
 }
 
 .drawer-close {
@@ -870,6 +873,20 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.copy-feedback {
+  font-size: 0.8rem;
+  font-weight: 500;
+  margin-left: 0.25rem;
+}
+
+.copy-feedback-success {
+  color: #34d399;
+}
+
+.copy-feedback-error {
+  color: #f87171;
 }
 
 .live-indicator {

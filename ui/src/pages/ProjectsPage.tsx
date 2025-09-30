@@ -9,7 +9,6 @@ import {
   useState,
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getPatStatus, initialPatStatus } from '../api/integrations';
 import { useProjects } from '../hooks/useProjectsData';
 import {
   Project,
@@ -18,6 +17,7 @@ import {
   ProjectUpdatePayload,
 } from '../types';
 import { formatTimestamp } from '../utils/time';
+import { usePatStatus } from '../hooks/usePatStatus';
 
 type ProjectFormState = {
   name: string;
@@ -136,12 +136,13 @@ function ProjectsPage() {
     projects,
     isLoading,
     error: projectsError,
+    refreshProjects,
     createProject,
     updateProject,
     deleteProject,
+    clearError,
   } = useProjects();
 
-  const [patStatus, setPatStatus] = useState(initialPatStatus);
   const [pageError, setPageError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -161,28 +162,7 @@ function ProjectsPage() {
 
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadCredentials = async () => {
-      try {
-        const status = await getPatStatus();
-        if (!cancelled) {
-          setPatStatus(status);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setPageError((prev) => prev ?? 'Failed to load credential status');
-        }
-      }
-    };
-
-    void loadCredentials();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     if (!editingProject) {
@@ -191,6 +171,9 @@ function ProjectsPage() {
       setClearCodexToken(false);
     }
   }, [editingProject]);
+
+  const { status: patStatus, error: patStatusError, refresh: refreshPatStatus, clearError: clearPatStatusError } =
+    usePatStatus();
 
   const sortedProjects = useMemo(() => {
     const items = [...projects];
@@ -232,7 +215,23 @@ function ProjectsPage() {
     return items;
   }, [projects, sortDirection, sortKey]);
 
-  const combinedError = pageError || projectsError;
+  const combinedError = pageError || projectsError || patStatusError;
+
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    setPageError(null);
+    setSuccessMessage(null);
+    clearError();
+    clearPatStatusError();
+    try {
+      await Promise.all([refreshProjects(), refreshPatStatus()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Retry failed';
+      setPageError(`Retry failed: ${message}`);
+    } finally {
+      setRetrying(false);
+    }
+  }, [clearError, clearPatStatusError, refreshProjects, refreshPatStatus]);
 
   const updateFieldError = (
     field: keyof ProjectFormState,
@@ -399,15 +398,27 @@ function ProjectsPage() {
 
   useEffect(() => {
     const state = location.state as { editProjectId?: number } | null;
-    if (!state?.editProjectId) {
+    const targetId = state?.editProjectId;
+    if (!targetId) {
       return;
     }
-    const match = projects.find((project) => project.id === state.editProjectId);
+
+    if (projects.length === 0 && isLoading) {
+      return;
+    }
+
+    const match = projects.find((project) => project.id === targetId);
     if (match) {
       handleEditSelect(match);
+      navigate('.', { replace: true, state: {} });
+      return;
     }
-    navigate('.', { replace: true, state: {} });
-  }, [handleEditSelect, location.state, navigate, projects]);
+
+    if (!isLoading) {
+      setPageError((prev) => prev ?? 'Project not found. It may have been removed.');
+      navigate('.', { replace: true, state: {} });
+    }
+  }, [handleEditSelect, isLoading, location.state, navigate, projects]);
 
   const handleEditCancel = () => {
     setEditingProject(null);
@@ -549,7 +560,19 @@ function ProjectsPage() {
         <p>Register repositories, inspect recent activity, and manage runner credentials.</p>
       </header>
 
-      {combinedError && <div className="error-banner">{combinedError}</div>}
+      {combinedError ? (
+        <div className="error-banner">
+          <span>{combinedError}</span>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={handleRetry}
+            disabled={retrying}
+          >
+            {retrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      ) : null}
       {successMessage && <div className="notice notice-success">{successMessage}</div>}
 
       <div className="panel-grid">

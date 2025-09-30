@@ -1,5 +1,14 @@
 import { defineConfig } from 'vite';
+import type { IncomingMessage } from 'http';
 import react from '@vitejs/plugin-react';
+
+function spaBypass(req: IncomingMessage): string | undefined {
+  const accepts = req.headers.accept ?? '';
+  if (accepts.includes('text/html')) {
+    return '/index.html';
+  }
+  return undefined;
+}
 
 export default defineConfig({
   plugins: [react()],
@@ -17,19 +26,23 @@ export default defineConfig({
       },
       '/projects': {
         target: 'http://localhost:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        bypass: spaBypass
       },
       '/integrations': {
         target: 'http://localhost:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        bypass: spaBypass
       },
       '/tasks': {
         target: 'http://localhost:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        bypass: spaBypass
       },
       '/models': {
         target: 'http://localhost:8000',
-        changeOrigin: true
+        changeOrigin: true,
+        bypass: spaBypass
       }
     }
   }

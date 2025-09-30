@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getPatStatus, initialPatStatus } from '../api/integrations';
 import { getProject } from '../api/projects';
 import { useProjects } from '../hooks/useProjectsData';
+import { usePatStatus } from '../hooks/usePatStatus';
 import { ProjectAllowlistStatus, ProjectDetail, ProjectTaskSummary } from '../types';
 import { formatTimestamp } from '../utils/time';
 
@@ -22,7 +22,6 @@ function ProjectDetailPage() {
   const [detail, setDetail] = useState<ProjectDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [patStatus, setPatStatus] = useState(initialPatStatus);
   const [notice, setNotice] = useState<string | null>(null);
 
   const fallbackProject = useMemo(() => {
@@ -67,27 +66,9 @@ function ProjectDetailPage() {
     void refreshProjects();
   }, [refreshProjects]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const { status: patStatus, error: patStatusError, lastRefreshedAt: patStatusRefreshedAt } = usePatStatus();
 
-    const fetchPatStatus = async () => {
-      try {
-        const status = await getPatStatus();
-        if (!cancelled) {
-          setPatStatus(status);
-        }
-      } catch (statusError) {
-        if (!cancelled) {
-          setError((prev) => prev ?? 'Failed to load credential status');
-        }
-      }
-    };
-
-    void fetchPatStatus();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const combinedError = error ?? patStatusError;
 
   const summary = detail ?? fallbackProject;
 
@@ -117,7 +98,7 @@ function ProjectDetailPage() {
         ← Back to Projects
       </button>
 
-      {error && <div className="error-banner">{error}</div>}
+      {combinedError && <div className="error-banner">{combinedError}</div>}
       {notice && <div className="notice notice-success">{notice}</div>}
 
       {loading && <div className="notice">Loading project information…</div>}
@@ -262,6 +243,10 @@ function ProjectDetailPage() {
             <div>
               <dt>PAT Last Verified</dt>
               <dd>{formatTimestamp(patStatus.verification_checked_at)}</dd>
+            </div>
+            <div>
+              <dt>Status Refreshed</dt>
+              <dd>{formatTimestamp(patStatusRefreshedAt)}</dd>
             </div>
           </div>
         </section>

@@ -1,14 +1,13 @@
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, FormEvent, useMemo, useRef, useState } from 'react';
 import {
   clearPat,
   clearSession,
-  getPatStatus,
   importSession,
-  initialPatStatus,
   storePat,
   verifyPat,
 } from '../api/integrations';
 import { formatTimestamp } from '../utils/time';
+import { usePatStatus } from '../hooks/usePatStatus';
 
 type PatFormState = {
   token: string;
@@ -31,7 +30,13 @@ const initialSessionForm: SessionFormState = {
 };
 
 function SettingsPage() {
-  const [patStatus, setPatStatus] = useState(initialPatStatus);
+  const {
+    status: patStatus,
+    updateStatus,
+    error: patStatusError,
+    clearError: clearPatStatusError,
+    lastRefreshedAt: patStatusRefreshedAt,
+  } = usePatStatus();
   const [patForm, setPatForm] = useState(initialPatForm);
   const [patMessage, setPatMessage] = useState<string | null>(null);
   const [patSubmitting, setPatSubmitting] = useState(false);
@@ -51,6 +56,9 @@ function SettingsPage() {
   const [sessionClearModalOpen, setSessionClearModalOpen] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const sessionFileRequestIdRef = useRef(0);
+
+  const combinedError = error ?? patStatusError;
 
   const activeCredentialLabel = useMemo(() => {
     switch (patStatus.active_credential) {
@@ -63,25 +71,6 @@ function SettingsPage() {
     }
   }, [patStatus.active_credential]);
 
-  const loadPatStatus = async () => {
-    try {
-      const status = await getPatStatus();
-      setPatStatus(status);
-    } catch (apiError) {
-      setError(apiError instanceof Error ? apiError.message : 'Failed to load PAT status');
-    }
-  };
-
-  useEffect(() => {
-    void loadPatStatus();
-  }, []);
-
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void loadPatStatus();
-    }, 15000);
-    return () => window.clearInterval(interval);
-  }, []);
 
   const handlePatStore = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -93,6 +82,7 @@ function SettingsPage() {
     setPatMessage(null);
     setSessionMessage(null);
     setError(null);
+    clearPatStatusError();
     setVerifyMessage(null);
     setVerifyResult(null);
     try {
@@ -101,7 +91,7 @@ function SettingsPage() {
         updated_by: patForm.actor.trim() ? patForm.actor.trim() : null,
       };
       const data = await storePat(payload);
-      setPatStatus(data);
+      updateStatus(data);
       setPatForm(initialPatForm);
       setPatMessage('Personal access token stored successfully.');
     } catch (apiError) {
@@ -116,12 +106,13 @@ function SettingsPage() {
     setPatMessage(null);
     setSessionMessage(null);
     setError(null);
+    clearPatStatusError();
     setVerifyMessage(null);
     setVerifyResult(null);
     try {
       const payload = clearActor.trim() ? { updated_by: clearActor.trim() } : {};
       const data = await clearPat(payload);
-      setPatStatus(data);
+      updateStatus(data);
       setPatMessage('Personal access token cleared. Tasks will fail until a new token is configured.');
       setClearActor('');
       setClearModalOpen(false);
@@ -140,13 +131,14 @@ function SettingsPage() {
     setPatMessage(null);
     setSessionMessage(null);
     setError(null);
+    clearPatStatusError();
     try {
       const payload: { gitlab_host?: string } = {};
       if (patStatus.verification_host) {
         payload.gitlab_host = patStatus.verification_host;
       }
       const data = await verifyPat(payload);
-      setPatStatus(data);
+      updateStatus(data);
 
       if (data.verification_status === 'verified') {
         const hostLabel = data.verification_host ?? 'GitLab';
@@ -178,13 +170,14 @@ function SettingsPage() {
     setSessionMessage(null);
     setPatMessage(null);
     setError(null);
+    clearPatStatusError();
     try {
       const payload = {
         bundle: sessionForm.bundle,
         updated_by: sessionForm.actor.trim() ? sessionForm.actor.trim() : null,
       };
       const data = await importSession(payload);
-      setPatStatus(data);
+      updateStatus(data);
       setSessionForm(initialSessionForm);
       setSessionFileName(null);
       setSessionMessage('ChatGPT session bundle imported successfully.');
@@ -196,18 +189,35 @@ function SettingsPage() {
   };
 
   const handleSessionFile = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files && event.target.files[0];
+    const input = event.target;
+    const file = input.files && input.files[0];
     if (!file) {
       return;
     }
+
+    const requestId = sessionFileRequestIdRef.current + 1;
+    sessionFileRequestIdRef.current = requestId;
+    setSessionMessage(null);
+    setError(null);
+
     const reader = new FileReader();
     reader.onload = () => {
+      if (sessionFileRequestIdRef.current !== requestId) {
+        input.value = '';
+        return;
+      }
       const result = typeof reader.result === 'string' ? reader.result : '';
       setSessionForm((prev) => ({ ...prev, bundle: result }));
       setSessionFileName(file.name);
+      input.value = '';
     };
     reader.onerror = () => {
+      if (sessionFileRequestIdRef.current !== requestId) {
+        input.value = '';
+        return;
+      }
       setError(`Failed to read ${file.name}`);
+      input.value = '';
     };
     reader.readAsText(file);
   };
@@ -217,10 +227,11 @@ function SettingsPage() {
     setSessionMessage(null);
     setPatMessage(null);
     setError(null);
+    clearPatStatusError();
     try {
       const payload = sessionClearActor.trim() ? { updated_by: sessionClearActor.trim() } : {};
       const data = await clearSession(payload);
-      setPatStatus(data);
+      updateStatus(data);
       setSessionMessage('ChatGPT session bundle cleared. Import a fresh bundle to continue.');
       setSessionForm(initialSessionForm);
       setSessionFileName(null);
@@ -240,7 +251,7 @@ function SettingsPage() {
         <p>Manage GitLab PATs and Codex session bundles for the runner environment.</p>
       </header>
 
-      {error && <div className="error-banner">{error}</div>}
+      {combinedError && <div className="error-banner">{combinedError}</div>}
       {patMessage && <div className="notice notice-success">{patMessage}</div>}
       {sessionMessage && <div className="notice notice-success">{sessionMessage}</div>}
       {verifyMessage && (
@@ -303,6 +314,7 @@ function SettingsPage() {
           </div>
           <div className="summary-meta">
             <span>Active credential: {activeCredentialLabel}</span>
+            <span>Status refreshed: {formatTimestamp(patStatusRefreshedAt)}</span>
           </div>
         </div>
         {!patStatus.configured && (

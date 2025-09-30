@@ -2,11 +2,11 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import TaskSubmissionCard, { TaskSubmissionFormState } from '../components/TaskSubmissionCard';
 import { createTask } from '../api/tasks';
-import { getPatStatus, initialPatStatus } from '../api/integrations';
 import { listCodexModels } from '../api/models';
 import { CodexModel, TaskCreatePayload } from '../types';
 import { formatTimestamp } from '../utils/time';
 import { useProjects } from '../hooks/useProjectsData';
+import { usePatStatus } from '../hooks/usePatStatus';
 
 const initialFormState: TaskSubmissionFormState = {
   projectId: '',
@@ -21,14 +21,19 @@ function TaskSubmitPage() {
   const [form, setForm] = useState(initialFormState);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdTaskId, setCreatedTaskId] = useState<number | null>(null);
-  const [patStatus, setPatStatus] = useState(initialPatStatus);
-  const [lastPatRefresh, setLastPatRefresh] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   const { projects, error: projectsError, clearError: clearProjectsError, isLoading: projectsLoading } = useProjects();
+
+  const {
+    status: patStatus,
+    error: patStatusError,
+    lastRefreshedAt: patLastRefreshedAt,
+  } = usePatStatus();
 
   const selectedProject = useMemo(() => {
     return projects.find((project) => String(project.id) === form.projectId) ?? null;
@@ -60,6 +65,7 @@ function TaskSubmitPage() {
         const available = await listCodexModels();
         if (!cancelled) {
           setModels(available);
+          setModelsError(null);
           const defaultModel = available.find((item) => item.is_default)?.id ?? '';
           setForm((prev) => {
             if (prev.codexModel && available.some((item) => item.id === prev.codexModel)) {
@@ -70,7 +76,7 @@ function TaskSubmitPage() {
         }
       } catch (apiError) {
         if (!cancelled) {
-          setError(apiError instanceof Error ? apiError.message : 'Failed to load models');
+          setModelsError(apiError instanceof Error ? apiError.message : 'Failed to load models');
         }
       }
     };
@@ -79,34 +85,6 @@ function TaskSubmitPage() {
 
     return () => {
       cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const fetchPatStatus = async () => {
-      try {
-        const status = await getPatStatus();
-        if (!cancelled) {
-          setPatStatus(status);
-          setLastPatRefresh(new Date().toISOString());
-        }
-      } catch (apiError) {
-        if (!cancelled) {
-          setError(apiError instanceof Error ? apiError.message : 'Failed to load credential status');
-        }
-      }
-    };
-
-    void fetchPatStatus();
-    const interval = window.setInterval(() => {
-      void fetchPatStatus();
-    }, 15000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
     };
   }, []);
 
@@ -156,6 +134,8 @@ function TaskSubmitPage() {
     }
   };
 
+  const bannerMessage = error ?? projectsError ?? patStatusError ?? modelsError;
+
   return (
     <div className="page">
       <header className="page-header">
@@ -163,7 +143,7 @@ function TaskSubmitPage() {
         <p>Pick a project, provide the prompt, and submit a new Codex task.</p>
       </header>
 
-      {(error || projectsError) && <div className="error-banner">{error || projectsError}</div>}
+      {bannerMessage && <div className="error-banner">{bannerMessage}</div>}
       {successMessage && <div className="notice notice-success">{successMessage}</div>}
 
       <TaskSubmissionCard
@@ -210,7 +190,7 @@ function TaskSubmitPage() {
           </div>
           <div>
             <dt>Status refreshed</dt>
-            <dd>{formatTimestamp(lastPatRefresh)}</dd>
+            <dd>{formatTimestamp(patLastRefreshedAt)}</dd>
           </div>
         </dl>
         {createdTaskId ? (

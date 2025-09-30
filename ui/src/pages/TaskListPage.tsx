@@ -71,6 +71,20 @@ function TaskListPage() {
   const copyResetRef = useRef<number | null>(null);
   const modalCardRef = useRef<HTMLDivElement | null>(null);
   const confirmButtonRef = useRef<HTMLButtonElement | null>(null);
+  const selectedTaskIdRef = useRef<number | null>(null);
+  const logStreamRequestRef = useRef(0);
+  const logSkipRef = useRef(0);
+  const taskDetailRef = useRef<Task | null>(null);
+
+  const updateSelectedTaskId = useCallback((nextId: number | null) => {
+    selectedTaskIdRef.current = nextId;
+    setSelectedTaskId(nextId);
+  }, []);
+
+  const applyTaskDetail = useCallback((detail: Task | null) => {
+    taskDetailRef.current = detail;
+    setTaskDetail(detail);
+  }, []);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -174,17 +188,20 @@ function TaskListPage() {
 
   const refreshTaskDetail = useCallback(
     async (taskId: number, force?: boolean) => {
+      const currentDetail = taskDetailRef.current;
       if (
         !force &&
-        taskDetail &&
-        taskDetail.id === taskId &&
-        (taskDetail.status === 'done' || taskDetail.status === 'failed')
+        currentDetail &&
+        currentDetail.id === taskId &&
+        (currentDetail.status === 'done' || currentDetail.status === 'failed')
       ) {
-        return taskDetail;
+        return currentDetail;
       }
       try {
         const data = await getTask(taskId);
-        setTaskDetail(data);
+        if (selectedTaskIdRef.current === taskId) {
+          applyTaskDetail(data);
+        }
         setTasks((prev) => {
           const exists = prev.some((item) => item.id === data.id);
           if (exists) {
@@ -198,55 +215,86 @@ function TaskListPage() {
         return null;
       }
     },
-    [taskDetail],
+    [applyTaskDetail],
   );
 
   useEffect(() => {
     const state = location.state as LocationState | null;
     if (state?.focusTaskId) {
       const focusId = state.focusTaskId;
-      setSelectedTaskId(focusId);
+      updateSelectedTaskId(focusId);
       setTaskLookupId(String(focusId));
       setTaskLogs([]);
+      logSkipRef.current = 0;
       setCopyState('idle');
       void refreshTaskDetail(focusId, true);
       navigate('.', { replace: true, state: {} });
     }
-  }, [location.state, navigate, refreshTaskDetail]);
+  }, [location.state, navigate, refreshTaskDetail, updateSelectedTaskId]);
 
   useEffect(() => {
     if (!selectedTaskId || !isDrawerOpen) {
+      setIsStreaming(false);
       return;
     }
 
     let cancelled = false;
+    const requestId = logStreamRequestRef.current + 1;
+    logStreamRequestRef.current = requestId;
     let eventSource: EventSource | null = null;
+    const currentTaskId = selectedTaskId;
 
     const openStream = async () => {
       try {
-        const snapshot = await getTaskLogs(selectedTaskId);
-        if (!cancelled) {
-          setCopyState('idle');
-          setTaskLogs(snapshot.entries ?? []);
-          setLogSnapshotMeta({
-            status: snapshot.status,
-            branch: snapshot.branch ?? null,
-            codex_model: snapshot.codex_model ?? null,
-            abort_requested: snapshot.abort_requested,
-          });
+        const snapshot = await getTaskLogs(currentTaskId);
+        if (cancelled || logStreamRequestRef.current !== requestId) {
+          return;
         }
-      } catch (apiError) {
-        if (!cancelled) {
-          setTaskLogs([]);
-          setLogSnapshotMeta(null);
+        const snapshotEntries = snapshot.entries ?? [];
+        setCopyState('idle');
+        setTaskLogs(snapshotEntries);
+        setLogSnapshotMeta({
+          status: snapshot.status,
+          branch: snapshot.branch ?? null,
+          codex_model: snapshot.codex_model ?? null,
+          abort_requested: snapshot.abort_requested,
+        });
+        logSkipRef.current = snapshotEntries.length;
+
+        const shouldStream = ['pending', 'running'].includes(snapshot.status);
+        if (!shouldStream) {
+          setIsStreaming(false);
+          return;
         }
+      } catch {
+        if (cancelled || logStreamRequestRef.current !== requestId) {
+          return;
+        }
+        setTaskLogs([]);
+        setLogSnapshotMeta(null);
+        logSkipRef.current = 0;
       }
 
-      eventSource = new EventSource(`/tasks/${selectedTaskId}/logs`);
+      if (cancelled || logStreamRequestRef.current !== requestId) {
+        return;
+      }
+
+      eventSource = new EventSource(`/tasks/${currentTaskId}/logs`);
       setIsStreaming(true);
 
+      const closeStream = () => {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      };
+
       eventSource.onmessage = (event) => {
-        if (cancelled) {
+        if (cancelled || logStreamRequestRef.current !== requestId) {
+          return;
+        }
+        if (logSkipRef.current > 0) {
+          logSkipRef.current -= 1;
           return;
         }
         const message = event.data as string;
@@ -255,43 +303,57 @@ function TaskListPage() {
         }
       };
 
-      eventSource.addEventListener('done', async () => {
-        if (!cancelled) {
+      eventSource.addEventListener('done', () => {
+        void (async () => {
+          if (cancelled || logStreamRequestRef.current !== requestId) {
+            return;
+          }
           setIsStreaming(false);
-          await refreshTaskDetail(selectedTaskId, true);
+          logSkipRef.current = 0;
+          await refreshTaskDetail(currentTaskId, true);
           await fetchTasks('refresh');
-        }
-        eventSource?.close();
+          closeStream();
+        })();
       });
 
-      eventSource.addEventListener('aborted', async () => {
-        if (!cancelled) {
+      eventSource.addEventListener('aborted', () => {
+        void (async () => {
+          if (cancelled || logStreamRequestRef.current !== requestId) {
+            return;
+          }
           setIsStreaming(false);
-          setActionNotice((prev) => prev ?? 'Task aborted');
-          await refreshTaskDetail(selectedTaskId, true);
+          logSkipRef.current = 0;
+          setActionNotice('Task aborted');
+          await refreshTaskDetail(currentTaskId, true);
           await fetchTasks('refresh');
-        }
-        eventSource?.close();
+          closeStream();
+        })();
       });
 
-      eventSource.addEventListener('deleted', async () => {
-        if (!cancelled) {
+      eventSource.addEventListener('deleted', () => {
+        void (async () => {
+          if (cancelled || logStreamRequestRef.current !== requestId) {
+            return;
+          }
           setIsStreaming(false);
-          setTaskDetail(null);
+          applyTaskDetail(null);
           setTaskLogs([]);
+          setLogSnapshotMeta(null);
           setActionNotice(null);
           setIsDrawerOpen(false);
-          setSelectedTaskId(null);
+          updateSelectedTaskId(null);
+          logSkipRef.current = 0;
           await fetchTasks('refresh');
-        }
-        eventSource?.close();
+          closeStream();
+        })();
       });
 
       eventSource.onerror = () => {
-        if (!cancelled) {
-          setIsStreaming(false);
+        if (cancelled || logStreamRequestRef.current !== requestId) {
+          return;
         }
-        eventSource?.close();
+        setIsStreaming(false);
+        closeStream();
       };
     };
 
@@ -302,8 +364,11 @@ function TaskListPage() {
       if (eventSource) {
         eventSource.close();
       }
+      if (logStreamRequestRef.current === requestId) {
+        setIsStreaming(false);
+      }
     };
-  }, [selectedTaskId, isDrawerOpen, refreshTaskDetail, fetchTasks]);
+  }, [selectedTaskId, isDrawerOpen, refreshTaskDetail, fetchTasks, updateSelectedTaskId, applyTaskDetail]);
 
   useEffect(() => {
     if (!selectedTaskId) {
@@ -425,8 +490,9 @@ function TaskListPage() {
       setError('Task ID must be a number');
       return;
     }
-    setSelectedTaskId(id);
+    updateSelectedTaskId(id);
     setTaskLogs([]);
+    logSkipRef.current = 0;
     setCopyState('idle');
     setIsDrawerOpen(true);
     setConfirmAction(null);
@@ -436,9 +502,9 @@ function TaskListPage() {
   };
 
   const handleTaskSelect = (task: Task) => {
-    setSelectedTaskId(task.id);
+    updateSelectedTaskId(task.id);
     setTaskLookupId(String(task.id));
-    setTaskDetail(task);
+    applyTaskDetail(task);
     setLogSnapshotMeta({
       status: task.status,
       branch: task.branch ?? null,
@@ -446,6 +512,7 @@ function TaskListPage() {
       abort_requested: task.abort_requested,
     });
     setTaskLogs([]);
+    logSkipRef.current = 0;
     setCopyState('idle');
     setError(null);
     setIsDrawerOpen(true);
@@ -480,13 +547,31 @@ function TaskListPage() {
   const selectedProject = taskDetail ? projectMap.get(taskDetail.project_id) ?? null : null;
   const canAbortTask = taskDetail ? ['pending', 'running'].includes(taskDetail.status) : false;
   const canDeleteTask = taskDetail ? ['done', 'failed', 'aborted'].includes(taskDetail.status) : false;
+  const abortPending = taskDetail ? taskDetail.abort_requested && ['pending', 'running'].includes(taskDetail.status) : false;
 
-  const handleDrawerClose = () => {
+  const handleDrawerClose = useCallback(() => {
     setIsDrawerOpen(false);
     setConfirmAction(null);
     setActionError(null);
+    setActionNotice(null);
     setLogSnapshotMeta(null);
-  };
+    logSkipRef.current = 0;
+  }, []);
+
+  useEffect(() => {
+    if (!isDrawerOpen) {
+      return;
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleDrawerClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDrawerOpen, handleDrawerClose]);
 
   const handleAbortClick = () => {
     setConfirmAction('abort');
@@ -511,17 +596,17 @@ function TaskListPage() {
     try {
       if (confirmAction === 'abort') {
         const updated = await abortTask(taskDetail.id);
-        setTaskDetail(updated);
+        applyTaskDetail(updated);
         setActionNotice('Abort requested; waiting for runner to stop');
         await refreshTaskDetail(updated.id, true);
         await fetchTasks('refresh');
       } else {
         await deleteTask(taskDetail.id);
         setActionNotice('Task deleted');
-        setTaskDetail(null);
+        applyTaskDetail(null);
         setTaskLogs([]);
         setCopyState('idle');
-        setSelectedTaskId(null);
+        updateSelectedTaskId(null);
         setIsDrawerOpen(false);
         setLogSnapshotMeta(null);
         await fetchTasks('refresh');
@@ -775,8 +860,8 @@ function TaskListPage() {
 
       {isDrawerOpen && (
         <div className="task-drawer">
-          <div className="task-drawer-backdrop" onClick={handleDrawerClose} />
-          <div className="task-drawer-panel" onClick={(event) => event.stopPropagation()}>
+          <div className="task-drawer-backdrop" aria-hidden="true" />
+          <div className="task-drawer-panel">
             <button
               type="button"
               className="drawer-close"
@@ -792,7 +877,7 @@ function TaskListPage() {
                     <p className="drawer-eyebrow">Task #{taskDetail.id}</p>
                     <div className="drawer-status-row">
                       <span className={`status status-${taskDetail.status}`}>{taskDetail.status}</span>
-                      {taskDetail.abort_requested && <span className="abort-pill">Abort requested</span>}
+                      {abortPending && <span className="abort-pill">Abort requested</span>}
                     </div>
                     <p className="drawer-subtle">
                       Created {formatTimestamp(taskDetail.created_at)} • Project{' '}
@@ -807,7 +892,7 @@ function TaskListPage() {
                         onClick={handleAbortClick}
                         disabled={isActionLoading || confirmAction !== null || taskDetail.abort_requested}
                       >
-                        {taskDetail.abort_requested ? 'Abort pending…' : 'Abort task'}
+                        {abortPending ? 'Abort pending…' : 'Abort task'}
                       </button>
                     )}
                     {canDeleteTask && (
@@ -894,6 +979,17 @@ function TaskListPage() {
                             ? 'Copy failed'
                             : 'Copy logs'}
                       </button>
+                      {copyState !== 'idle' && (
+                        <span
+                          className={`copy-feedback ${copyState === 'success' ? 'copy-feedback-success' : 'copy-feedback-error'}`}
+                          role="status"
+                          aria-live="polite"
+                        >
+                          {copyState === 'success'
+                            ? 'Logs copied to clipboard'
+                            : 'Failed to copy logs'}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {logSnapshotMeta && (
