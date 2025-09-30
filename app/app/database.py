@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Generator
 
 from sqlmodel import Session, SQLModel, create_engine
 from sqlalchemy import inspect, text
+
+from .models import Project
+
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_FILENAME = "app.db"
 DB_ENV_VAR = "APP_DATABASE_URL"
@@ -58,9 +64,18 @@ def get_session() -> Generator[Session, None, None]:
 def _ensure_project_columns(db_engine) -> None:
     try:
         inspector = inspect(db_engine)
-        columns = {column_info["name"] for column_info in inspector.get_columns("project")}
-    except Exception:
+        column_info = inspector.get_columns("project")
+    except Exception as exc:
+        logger.exception("Failed to inspect project table for schema updates: %s", exc)
         return
+
+    columns = {column["name"] for column in column_info}
+
+    if "local_path" in columns:
+        _drop_legacy_project_local_path(db_engine, column_info)
+        inspector = inspect(db_engine)
+        column_info = inspector.get_columns("project")
+        columns = {column["name"] for column in column_info}
     statements: dict[str, str] = {
         "gitlab_token": "ALTER TABLE project ADD COLUMN gitlab_token VARCHAR",
         "codex_token_encrypted": "ALTER TABLE project ADD COLUMN codex_token_encrypted VARCHAR",
@@ -78,11 +93,33 @@ def _ensure_project_columns(db_engine) -> None:
             connection.execute(text(ddl))
 
 
+def _drop_legacy_project_local_path(
+    db_engine, column_info: list[dict[str, object]]
+) -> None:
+    columns_to_copy = [column["name"] for column in column_info if column["name"] != "local_path"]
+
+    with db_engine.begin() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            connection.exec_driver_sql("ALTER TABLE project RENAME TO project_local_path_legacy")
+            Project.__table__.create(connection, checkfirst=False)
+            if columns_to_copy:
+                column_csv = ", ".join(columns_to_copy)
+                insert_sql = (
+                    f"INSERT INTO project ({column_csv}) SELECT {column_csv} FROM project_local_path_legacy"
+                )
+                connection.exec_driver_sql(insert_sql)
+            connection.exec_driver_sql("DROP TABLE project_local_path_legacy")
+        finally:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
 def _ensure_task_columns(db_engine) -> None:
     try:
         inspector = inspect(db_engine)
         columns = {column_info["name"] for column_info in inspector.get_columns("task")}
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to inspect task table for schema updates: %s", exc)
         return
 
     statements: dict[str, str] = {
@@ -110,7 +147,8 @@ def _ensure_integration_columns(db_engine) -> None:
             column_info["name"]
             for column_info in inspector.get_columns("integrationcredential")
         }
-    except Exception:
+    except Exception as exc:
+        logger.exception("Failed to inspect integration credential table for schema updates: %s", exc)
         return
 
     statements = {

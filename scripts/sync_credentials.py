@@ -97,6 +97,9 @@ def main() -> int:
     else:
         print("No credentials updated; check env values if this is unexpected")
 
+    if result.session_bundle_error:
+        print(f"warning: {result.session_bundle_error}", file=sys.stderr)
+
     return 0
 
 

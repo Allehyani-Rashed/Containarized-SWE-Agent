@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 import re
 from datetime import datetime, timezone
@@ -40,6 +41,9 @@ BRANCH_PREFIX = "codex/task"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LOG_STORAGE_DIR = REPO_ROOT / "workspaces" / "logs"
 SENSITIVE_ENV_PATTERN = re.compile(r"(GITLAB_TOKEN=)([^\s]+)")
+
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_branch_name(task_id: int) -> str:
@@ -87,8 +91,10 @@ class TaskQueueManager:
         self._chatgpt_session_cache: ChatGPTSessionMaterial | None = None
         self._chatgpt_session_known_missing: bool = False
         self._chatgpt_session_present: bool = False
+        self._boot_time = datetime.now(timezone.utc)
         LOG_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
         self._thread = Thread(target=self._run, name="task-worker", daemon=True)
+        self._recover_interrupted_tasks()
         self._thread.start()
 
     def enqueue(self, task_id: int) -> None:
@@ -145,8 +151,57 @@ class TaskQueueManager:
                 continue
             try:
                 self._process_task(task_id)
+            except Exception as exc:  # noqa: BLE001 - surface unexpected crashes without killing the worker
+                self._append_log(task_id, f"Task execution crashed: {exc}")
+                with Session(self._engine) as session:
+                    task = session.get(Task, task_id)
+                    if task is not None and task.status not in {
+                        TaskStatus.done,
+                        TaskStatus.failed,
+                        TaskStatus.aborted,
+                    }:
+                        task.status = TaskStatus.failed
+                        task.finished_at = datetime.now(timezone.utc)
+                        session.add(task)
+                        session.commit()
+                self._mark_complete(task_id)
             finally:
                 self._tasks.task_done()
+
+    def _recover_interrupted_tasks(self) -> None:
+        with Session(self._engine) as session:
+            stuck_tasks = session.exec(
+                select(Task)
+                .where(Task.status.in_([TaskStatus.pending, TaskStatus.running]))
+                .where(Task.created_at < self._boot_time)
+            ).all()
+            if not stuck_tasks:
+                return
+
+            timestamp = datetime.now(timezone.utc)
+            marked: list[int] = []
+            for task in stuck_tasks:
+                if task.id is None:
+                    continue
+                previous_status = task.status
+                self.register_task(task.id)
+                if previous_status == TaskStatus.running:
+                    message = (
+                        "Task interrupted by orchestrator restart; marking as failed so it can be resubmitted"
+                    )
+                else:
+                    message = (
+                        "Task never started before orchestrator restart; marking as failed so it can be resubmitted"
+                    )
+                self._append_log(task.id, message)
+                task.status = TaskStatus.failed
+                task.finished_at = timestamp
+                session.add(task)
+                marked.append(task.id)
+            session.commit()
+
+        for task_id in marked:
+            self._mark_complete(task_id, terminal_event="failed")
 
     def _process_task(self, task_id: int) -> None:
         self._set_active_task(task_id)
@@ -156,6 +211,10 @@ class TaskQueueManager:
         task_allowlist: list[str] = []
         project_gitlab_host = ""
         gitlab_token = ""
+        project_default_branch = ""
+        project_gitlab_token_value = ""
+        project_cache_quota_mb: int | None = None
+        project_cache_prune_after_hours: int | None = None
         codex_token: str | None = None
         session_bundle: ChatGPTSessionMaterial | None = None
         session_bundle_error: str | None = None
@@ -193,11 +252,15 @@ class TaskQueueManager:
                     return
                 project_root = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
                 cache_identifier = project_cache_identifier(project.gitlab_host, project.gitlab_project_path)
+                project_default_branch = project.default_branch
+                project_gitlab_token_value = (project.gitlab_token or "").strip()
+                project_cache_quota_mb = project.cache_quota_mb
+                project_cache_prune_after_hours = project.cache_prune_after_hours
                 task.status = TaskStatus.running
                 task.started_at = datetime.now(timezone.utc)
                 task_prompt = task.prompt or ""
                 task_allowlist = list(task.allowlist or [])
-                target_branch = project.default_branch
+                target_branch = project_default_branch
                 gitlab_host = project.gitlab_host
                 gitlab_project_path = project.gitlab_project_path
                 branch_name = (task.branch or "").strip() or _generate_branch_name(task_id)
@@ -343,7 +406,12 @@ class TaskQueueManager:
                 return
 
             dry_run_enabled = _is_truthy(os.environ.get("RUNNER_GIT_DRY_RUN"))
-            effective_gitlab_token = (gitlab_token or "").strip() or (project.gitlab_token or "").strip()
+            effective_gitlab_token = (gitlab_token or "").strip() or project_gitlab_token_value
+
+            self._append_log(
+                task_id,
+                f"RUNNER_GIT_DRY_RUN evaluated to {int(dry_run_enabled)} for cache root {project_root}",
+            )
 
             self._append_log(task_id, f"Ensuring project cache {cache_identifier} at {project_root}")
             try:
@@ -383,15 +451,15 @@ class TaskQueueManager:
                 )
                 enforce_cache_policy(
                     project_root,
-                    quota_mb=project.cache_quota_mb,
-                    prune_after_hours=project.cache_prune_after_hours,
+                    quota_mb=project_cache_quota_mb,
+                    prune_after_hours=project_cache_prune_after_hours,
                     dry_run=dry_run_enabled,
                     log_fn=lambda message: self._append_log(task_id, message),
                 )
                 snapshot_path = snapshot_project_cache(
                     project_root,
                     commit_hash=commit_hash or "",
-                    branch=target_branch or project.default_branch or "",
+                    branch=target_branch or project_default_branch or "",
                     dry_run=dry_run_enabled,
                     log_fn=lambda message: self._append_log(task_id, message),
                 )
@@ -442,6 +510,13 @@ class TaskQueueManager:
                     session.commit()
                 self._mark_complete(task_id)
                 return
+
+            git_dir = Path(sanitized_path) / ".git"
+            if not git_dir.exists():
+                self._append_log(
+                    task_id,
+                    f"Sanitized workspace {sanitized_path} missing .git directory",
+                )
 
             self._append_log(task_id, f"Workspace ready at {sanitized_path}")
             with Session(self._engine) as session:
@@ -696,7 +771,14 @@ class TaskQueueManager:
         try:
             with path.open("r", encoding="utf-8") as handle:
                 persisted = [line.rstrip("\n") for line in handle]
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "Failed to read persisted logs for task %s from %s: %s",
+                task_id,
+                path,
+                exc,
+                exc_info=True,
+            )
             return
         with self._lock:
             cache = self._logs.get(task_id)
@@ -711,9 +793,15 @@ class TaskQueueManager:
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(f"{line}\n")
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "Failed to append task %s log entry to %s: %s",
+                task_id,
+                path,
+                exc,
+                exc_info=True,
+            )
             # Disk persistence is best-effort; keep in-memory buffer if writes fail.
-            pass
 
     def _remove_log_file(self, task_id: int) -> None:
         path = self._log_paths.pop(task_id, None)

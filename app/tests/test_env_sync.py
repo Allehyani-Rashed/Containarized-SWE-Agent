@@ -54,6 +54,7 @@ class EnvSyncTests(unittest.TestCase):
         self.assertTrue(result.project_created)
         self.assertTrue(result.codex_token_updated)
         self.assertIsNotNone(result.project_id)
+        self.assertIsNone(result.session_bundle_error)
 
         from sqlmodel import Session, select
         from app.app.integrations import GITLAB_PAT_KIND
@@ -94,6 +95,33 @@ class EnvSyncTests(unittest.TestCase):
         self.assertEqual(values["CODEX_ACCESS_TOKEN"], "quoted-sk")
         self.assertEqual(values["PROJECT_NAME"], "Demo Project")
 
+    def test_missing_session_bundle_allows_pat_sync(self) -> None:
+        config = self.env_sync.EnvConfig(
+            gitlab_pat="glpat-missing-session",
+            codex_token=None,
+            project_name=None,
+            project_default_branch=None,
+            gitlab_host=None,
+            gitlab_project_path=None,
+            session_bundle_path=Path(self.tmp_dir.name) / "absent.json",
+            session_bundle_inline=None,
+            actor="env-sync-tests",
+        )
+        result = self.env_sync.sync_credentials(config, repo_root=Path(self.tmp_dir.name))
+        self.assertTrue(result.gitlab_pat_updated)
+        self.assertFalse(result.session_bundle_updated)
+        self.assertIsNotNone(result.session_bundle_error)
+
+        from sqlmodel import Session, select
+        from app.app.integrations import GITLAB_PAT_KIND
+        from app.app.models import IntegrationCredential
+
+        with Session(self.engine) as session:
+            credential = session.exec(
+                select(IntegrationCredential).where(IntegrationCredential.kind == GITLAB_PAT_KIND)
+            ).one()
+            self.assertIsNotNone(credential.token_encrypted)
+
     def test_session_bundle_loaded_from_path(self) -> None:
         bundle_path = Path(self.tmp_dir.name) / "chatgpt.json"
         bundle_path.write_text('{"session_token": "token-123"}', encoding="utf-8")
@@ -110,6 +138,7 @@ class EnvSyncTests(unittest.TestCase):
         )
         result = self.env_sync.sync_credentials(config, repo_root=Path(self.tmp_dir.name))
         self.assertTrue(result.session_bundle_updated)
+        self.assertIsNone(result.session_bundle_error)
 
         from sqlmodel import Session
         from app.app.integrations import get_chatgpt_session_bundle

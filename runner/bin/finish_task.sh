@@ -56,6 +56,10 @@ export GIT_TERMINAL_PROMPT=0
 
 if ! git rev-parse --git-dir >/dev/null 2>&1; then
   error "Current directory is not a git repository: ${WORKDIR}"
+  error "Branch context: BRANCH=${BRANCH_NAME:-} TARGET_BRANCH=${TARGET_BRANCH_NAME:-} DRY_RUN=${DRY_RUN}"
+  if command -v ls >/dev/null 2>&1; then
+    error "Workspace listing (truncated): $(ls -a | head -n 20 | tr '\n' ' ')"
+  fi
   exit 1
 fi
 

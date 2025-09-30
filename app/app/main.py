@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import shutil
 import subprocess
@@ -70,6 +71,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKSPACES_ROOT = REPO_ROOT / "workspaces"
 
 
+logger = logging.getLogger(__name__)
+
+
 def _record_audit_event(session: Session, action: str, actor: str | None, details: str | None) -> None:
     entry = AuditLog(action=action, actor=actor, details=details)
     session.add(entry)
@@ -89,28 +93,79 @@ def _normalize_reason(reason: str | None) -> str | None:
     return value or None
 
 
+def _normalize_non_empty(value: str | None, *, field: str) -> str:
+    candidate = (value or "").strip()
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{field} cannot be empty",
+        )
+    return candidate
+
+
+def _normalize_gitlab_host(value: str | None) -> str:
+    host = _normalize_non_empty(value, field="GitLab host")
+    return host.rstrip("/")
+
+
+def _normalize_gitlab_project_path(value: str | None) -> str:
+    path = _normalize_non_empty(value, field="GitLab project path")
+    return path.strip("/")
+
+
+def _ensure_unique_project(
+    session: Session,
+    *,
+    gitlab_host: str,
+    gitlab_project_path: str,
+    exclude_id: int | None = None,
+) -> None:
+    query = select(Project).where(
+        Project.gitlab_host == gitlab_host,
+        Project.gitlab_project_path == gitlab_project_path,
+    )
+    if exclude_id is not None:
+        query = query.where(Project.id != exclude_id)
+    existing = session.exec(query).first()
+    if existing is not None:
+        repository = f"{gitlab_host}/{gitlab_project_path}" if gitlab_host else gitlab_project_path
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Project already registered for {repository}",
+        )
+
+
 def _remove_workspace(path_str: str | None) -> None:
     if not path_str:
         return
     try:
         candidate = Path(path_str).resolve()
-    except OSError:
+    except OSError as exc:
+        logger.warning("Unable to resolve workspace path %s: %s", path_str, exc)
         return
     try:
         workspace_root = WORKSPACES_ROOT.resolve()
-    except OSError:
+    except OSError as exc:
+        logger.warning("Unable to resolve workspaces root %s: %s", WORKSPACES_ROOT, exc)
         return
     try:
         candidate.relative_to(workspace_root)
     except ValueError:
         return
     if candidate.is_dir():
-        shutil.rmtree(candidate, ignore_errors=True)
+        try:
+            shutil.rmtree(candidate)
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            logger.warning("Failed to remove workspace directory %s: %s", candidate, exc)
     else:
         try:
             candidate.unlink()
-        except OSError:
-            pass
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            logger.warning("Failed to remove workspace file %s: %s", candidate, exc)
 
 
 def _build_repository_url(project: Project) -> str:
@@ -434,6 +489,11 @@ def create_project(
     data = payload.model_dump()
     raw_codex_token = (data.pop("codex_token", None) or "").strip()
 
+    name = _normalize_non_empty(data.get("name"), field="Project name")
+    default_branch = _normalize_branch_name(data.get("default_branch") or "")
+    gitlab_host = _normalize_gitlab_host(data.get("gitlab_host"))
+    gitlab_project_path = _normalize_gitlab_project_path(data.get("gitlab_project_path"))
+
     for numeric_field in ("cache_quota_mb", "cache_prune_after_hours"):
         value = data.get(numeric_field)
         if value is None:
@@ -444,7 +504,20 @@ def create_project(
                 detail=f"{numeric_field.replace('_', ' ')} must be non-negative",
             )
 
-    project = Project(**data)
+    _ensure_unique_project(
+        session,
+        gitlab_host=gitlab_host,
+        gitlab_project_path=gitlab_project_path,
+    )
+
+    project = Project(
+        name=name,
+        default_branch=default_branch,
+        gitlab_host=gitlab_host,
+        gitlab_project_path=gitlab_project_path,
+        cache_quota_mb=data.get("cache_quota_mb"),
+        cache_prune_after_hours=data.get("cache_prune_after_hours"),
+    )
     if raw_codex_token:
         manager = get_secret_manager()
         project.codex_token_encrypted = manager.encrypt(raw_codex_token)
@@ -520,23 +593,32 @@ def update_project(
     codex_token_value = payload_data.pop("codex_token", _codex_marker)
     codex_token_provided = codex_token_value is not _codex_marker
 
-    string_fields = {"name", "default_branch", "gitlab_host", "gitlab_project_path"}
     updated_fields: list[str] = []
     numeric_fields = {"cache_quota_mb", "cache_prune_after_hours"}
 
-    for field in string_fields:
-        if field not in payload_data:
-            continue
-        value = payload_data[field]
-        trimmed = value.strip() if isinstance(value, str) else value
-        if trimmed is None or (isinstance(trimmed, str) and not trimmed):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{field.replace('_', ' ')} cannot be empty",
-            )
-        if getattr(project, field) != trimmed:
-            setattr(project, field, trimmed)
-            updated_fields.append(field)
+    if "name" in payload_data:
+        name = _normalize_non_empty(payload_data["name"], field="Project name")
+        if project.name != name:
+            project.name = name
+            updated_fields.append("name")
+
+    if "default_branch" in payload_data:
+        default_branch = _normalize_branch_name(payload_data["default_branch"] or "")
+        if project.default_branch != default_branch:
+            project.default_branch = default_branch
+            updated_fields.append("default_branch")
+
+    if "gitlab_host" in payload_data:
+        gitlab_host = _normalize_gitlab_host(payload_data["gitlab_host"])
+        if project.gitlab_host != gitlab_host:
+            project.gitlab_host = gitlab_host
+            updated_fields.append("gitlab_host")
+
+    if "gitlab_project_path" in payload_data:
+        gitlab_project_path = _normalize_gitlab_project_path(payload_data["gitlab_project_path"])
+        if project.gitlab_project_path != gitlab_project_path:
+            project.gitlab_project_path = gitlab_project_path
+            updated_fields.append("gitlab_project_path")
 
     for field in numeric_fields:
         if field not in payload_data:
@@ -578,6 +660,13 @@ def update_project(
     audit_details = ", ".join(details_bits)
     if updated_fields or codex_token_state:
         _record_audit_event(session, "project.updated", actor, audit_details)
+
+    _ensure_unique_project(
+        session,
+        gitlab_host=project.gitlab_host,
+        gitlab_project_path=project.gitlab_project_path,
+        exclude_id=project.id,
+    )
 
     session.commit()
     session.refresh(project)

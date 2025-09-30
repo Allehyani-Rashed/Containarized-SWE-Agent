@@ -10,11 +10,23 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
+from contextlib import contextmanager
+import errno
 from urllib.parse import quote, urlparse, urlunparse
 
 
 from . import metrics
+
+try:  # pragma: no cover - platform-specific import
+    import fcntl  # type: ignore
+except ImportError:  # pragma: no cover - Windows fallback
+    fcntl = None  # type: ignore
+
+try:  # pragma: no cover - platform-specific import
+    import msvcrt  # type: ignore
+except ImportError:  # pragma: no cover - non-Windows
+    msvcrt = None  # type: ignore
 
 _NON_SLUG_CHARS = re.compile(r"[^a-z0-9._-]+")
 _OAUTH_TOKEN_PATTERN = re.compile(r"(oauth2:)([^@]+)(@)", re.IGNORECASE)
@@ -23,6 +35,12 @@ _CACHE_METADATA_FILENAME = "cache-metadata.json"
 _SNAPSHOT_DIRNAME = "snapshots"
 _DEFAULT_SNAPSHOT_RETENTION_HOURS = 168  # one week
 _DEFAULT_SNAPSHOT_LIMIT = 20
+
+_CACHE_LOCK_TIMEOUT_SECONDS = float(os.environ.get("PROJECT_CACHE_LOCK_TIMEOUT_SECONDS", "180"))
+_CACHE_LOCK_POLL_INTERVAL = 0.25
+_MAX_GIT_LOG_CHARS = 512
+_LOCK_SUPPORTED = fcntl is not None or msvcrt is not None
+_LOCK_BUSY_ERRNOS = {errno.EACCES, errno.EAGAIN, getattr(errno, "EWOULDBLOCK", errno.EAGAIN)}
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +168,88 @@ class ProjectCacheError(RuntimeError):
         self.reason = reason
 
 
+@contextmanager
+def _cache_operation_lock(
+    repo_path: Path,
+    *,
+    identifier: str,
+    log_fn: Callable[[str], None] | None = None,
+) -> Iterator[None]:
+    if not _LOCK_SUPPORTED:
+        yield
+        return
+
+    parent = repo_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    lock_path = parent / ".lock"
+    start = time.perf_counter()
+    message_emitted = False
+    locked = False
+
+    handle = lock_path.open("a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"0")
+            handle.flush()
+
+        while not locked:
+            try:
+                _acquire_file_lock(handle)
+                locked = True
+            except BlockingIOError:
+                pass
+            except OSError as exc:
+                if getattr(exc, "errno", None) not in _LOCK_BUSY_ERRNOS:
+                    raise ProjectCacheError(
+                        f"Failed to lock cache for {identifier}: {exc}",
+                        reason="cache-lock-error",
+                    ) from exc
+            if locked:
+                break
+            elapsed = time.perf_counter() - start
+            if elapsed >= _CACHE_LOCK_TIMEOUT_SECONDS:
+                raise ProjectCacheError(
+                    (
+                        f"Timed out waiting for cache lock on {identifier}; another operation may still be running. "
+                        "Retry once the existing task completes."
+                    ),
+                    reason="cache-lock-timeout",
+                )
+            if log_fn and not message_emitted:
+                log_fn(f"Waiting for cache lock on {identifier}")
+                message_emitted = True
+            time.sleep(_CACHE_LOCK_POLL_INTERVAL)
+
+        yield
+    finally:
+        if locked:
+            try:
+                _release_file_lock(handle)
+            except OSError:
+                logger.info("Failed to release cache lock for %s", identifier)
+        handle.close()
+
+
+def _acquire_file_lock(handle) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)  # type: ignore[arg-type]
+        return
+    if msvcrt is not None:  # pragma: no cover - Windows path
+        try:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+        except OSError as exc:
+            raise BlockingIOError from exc
+
+
+def _release_file_lock(handle) -> None:
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)  # type: ignore[arg-type]
+        return
+    if msvcrt is not None:  # pragma: no cover - Windows path
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
 def build_project_remote_url(
     gitlab_host: str,
     project_path: str,
@@ -241,67 +341,79 @@ def bootstrap_project_cache(
     askpass_path: Path | None = None
 
     try:
-        if (repo_path / ".git").exists():
-            try:
-                commit_hash = _rev_parse_head(repo_path, env)
-                short_hash = commit_hash[:12]
+        with _cache_operation_lock(repo_path, identifier=identifier, log_fn=log):
+            if (repo_path / ".git").exists():
+                try:
+                    commit_hash = _rev_parse_head(repo_path, env)
+                    short_hash = commit_hash[:12]
+                    log(
+                        f"Project cache {identifier} already bootstrapped at {repo_path}; HEAD {branch}@{short_hash} ({commit_hash})",
+                    )
+                except ProjectCacheError:
+                    raise
+                else:
+                    success = True
+                    return
+
+            if dry_run:
                 log(
-                    f"Project cache {identifier} already bootstrapped at {repo_path}; HEAD {branch}@{short_hash} ({commit_hash})",
+                    f"RUNNER_GIT_DRY_RUN=1 set; skipping initial clone for cache {identifier} at {repo_path}",
                 )
-            except ProjectCacheError:
-                raise
-            else:
+                if not repo_path.exists():
+                    repo_path.mkdir(parents=True, exist_ok=True)
                 success = True
                 return
 
-        if dry_run:
+            token = (gitlab_token or "").strip()
+            if not token:
+                raise ProjectCacheError(
+                    "GitLab PAT is required to bootstrap the project cache; store a PAT and retry",
+                    reason="missing-token",
+                )
+
+            remote_url = build_project_remote_url(gitlab_host, gitlab_project_path, gitlab_token=token)
+            env["GITLAB_TOKEN"] = token
+            env.setdefault("GIT_USERNAME", "oauth2")
+
+            askpass_path = _create_askpass_helper()
+            env["GIT_ASKPASS"] = str(askpass_path)
+            log(f"Bootstrapping project cache {identifier} at {repo_path}")
             log(
-                f"RUNNER_GIT_DRY_RUN=1 set; skipping initial clone for cache {identifier} at {repo_path}",
+                f"Running git clone for {identifier} into {repo_path} (branch {branch})",
             )
-            if not repo_path.exists():
-                repo_path.mkdir(parents=True, exist_ok=True)
+            clone_start = time.perf_counter()
+            clone_result = subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--branch",
+                    branch,
+                    "--single-branch",
+                    remote_url,
+                    str(repo_path),
+                ],
+                cwd=str(repo_path.parent),
+                env=env,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            clone_duration = time.perf_counter() - clone_start
+            _log_git_result(
+                log,
+                f"git clone {identifier}",
+                clone_result,
+                duration=clone_duration,
+            )
+            if clone_result.returncode != 0:
+                raise _command_error(repo_path.parent, clone_result)
+
+            commit_hash = _rev_parse_head(repo_path, env)
+            short_hash = commit_hash[:12]
+            log(
+                f"Project cache {identifier} bootstrapped at {repo_path}; HEAD {branch}@{short_hash} ({commit_hash})",
+            )
             success = True
-            return
-
-        token = (gitlab_token or "").strip()
-        if not token:
-            raise ProjectCacheError(
-                "GitLab PAT is required to bootstrap the project cache; store a PAT and retry",
-                reason="missing-token",
-            )
-
-        remote_url = build_project_remote_url(gitlab_host, gitlab_project_path, gitlab_token=token)
-        env["GITLAB_TOKEN"] = token
-        env.setdefault("GIT_USERNAME", "oauth2")
-
-        askpass_path = _create_askpass_helper()
-        env["GIT_ASKPASS"] = str(askpass_path)
-        log(f"Bootstrapping project cache {identifier} at {repo_path}")
-        clone_result = subprocess.run(
-            [
-                "git",
-                "clone",
-                "--branch",
-                branch,
-                "--single-branch",
-                remote_url,
-                str(repo_path),
-            ],
-            cwd=str(repo_path.parent),
-            env=env,
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        if clone_result.returncode != 0:
-            raise _command_error(repo_path.parent, clone_result)
-
-        commit_hash = _rev_parse_head(repo_path, env)
-        short_hash = commit_hash[:12]
-        log(
-            f"Project cache {identifier} bootstrapped at {repo_path}; HEAD {branch}@{short_hash} ({commit_hash})",
-        )
-        success = True
     except ProjectCacheError as exc:
         metrics.increment_operation_failure(operation, project_slug, reason=getattr(exc, "reason", "unknown"))
         raise
@@ -353,222 +465,281 @@ def refresh_project_cache(
 
     askpass_path: Path | None = None
 
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+
     try:
-        if not repo_path.exists():
-            raise ProjectCacheError(
-                (
-                    f"Project cache missing at {repo_path}; run 'scripts/project_cache.py --refresh' to rebuild "
-                    "or delete the directory so the next task can bootstrap a fresh clone."
-                ),
-                reason="missing-cache",
-            )
-
-        git_dir = repo_path / ".git"
-        if not git_dir.exists():
-            if dry_run:
-                log(
-                    f"RUNNER_GIT_DRY_RUN=1 set; skipping refresh for uninitialised cache at {repo_path}",
-                )
-                commit_hash = "dry-run-skip"
-                success = True
-                return commit_hash
-            raise ProjectCacheError(
-                (
-                    f"Project cache at {repo_path} is not a git repository; run 'git fsck' to diagnose, execute "
-                    "'scripts/project_cache.py --refresh' for automated repair, or delete the cache to allow a fresh bootstrap."
-                ),
-                reason="non-git-cache",
-            )
-
-        branch = (default_branch or "").strip()
-        if not branch:
-            raise ProjectCacheError(
-                "Project default branch is not configured; cannot refresh cache",
-                reason="missing-default-branch",
-            )
-
-        _ensure_git_repository(repo_path, env)
-        _ensure_repository_integrity(repo_path, env, log, identifier)
-        _ensure_worktree_clean(
-            repo_path,
-            env,
-            allow_force=force,
-            dry_run=dry_run,
-            log_fn=log,
-            identifier=identifier,
-        )
-
-        remote_exists = _remote_exists(repo_path, env, "origin")
-
-        if gitlab_token:
-            askpass_path = _create_askpass_helper()
-            env["GIT_ASKPASS"] = str(askpass_path)
-
-        remote_branch_exists = False
-        if remote_exists:
-            if dry_run:
-                log(f"RUNNER_GIT_DRY_RUN=1 set; skipping git fetch origin {branch} for {identifier}")
-            else:
-                log(f"Fetching origin/{branch} for {identifier}")
-                fetch_result = _run_git_command(
-                    ["git", "fetch", "--tags", "--force", "origin", branch],
-                    repo_path,
-                    env,
-                )
-                if fetch_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        fetch_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
-            remote_branch_exists = _remote_branch_exists(repo_path, env, "origin", branch)
-        else:
-            log(f"No origin remote configured for project cache at {repo_path}; skipping fetch")
-
-        local_branch_exists = _branch_exists(repo_path, env, branch)
-        if not local_branch_exists:
-            if remote_branch_exists and not dry_run:
-                log(f"Creating local branch {branch} from origin/{branch} for {identifier}")
-                checkout_result = _run_git_command(
-                    ["git", "checkout", "-B", branch, f"origin/{branch}"],
-                    repo_path,
-                    env,
-                )
-                if checkout_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        checkout_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
-                local_branch_exists = True
-            else:
-                if remote_branch_exists:
-                    message = (
-                        f"Project cache at {repo_path} is missing local branch '{branch}' while origin/{branch} exists. "
-                        f"Run 'git checkout -B {branch} origin/{branch}' and retry."
-                    )
-                elif remote_exists:
-                    message = (
-                        f"Origin remote configured for cache at {repo_path} but branch origin/{branch} is missing. "
-                        "Update the project default branch or ensure it exists upstream."
-                    )
-                else:
-                    message = (
-                        f"Project cache at {repo_path} is missing local branch '{branch}'. Configure the branch before running tasks."
-                    )
-                raise ProjectCacheError(message, reason="missing-local-branch")
-
-        log(f"Checking out {branch} for {identifier}")
-        checkout_result = _run_git_command(["git", "checkout", branch], repo_path, env)
-        if checkout_result.returncode != 0:
-            raise _command_error(
-                repo_path,
-                checkout_result,
-                identifier=identifier,
-                branch=branch,
-            )
-
-        if remote_exists and remote_branch_exists:
-            if dry_run:
-                log(f"RUNNER_GIT_DRY_RUN=1 set; would reset {branch} to origin/{branch} for {identifier}")
-            else:
-                log(f"Resetting {branch} to origin/{branch} for {identifier}")
-                reset_result = _run_git_command(
-                    ["git", "reset", "--hard", f"origin/{branch}"],
-                    repo_path,
-                    env,
-                )
-                if reset_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        reset_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
-        elif remote_exists:
-            raise ProjectCacheError(
-                f"Origin remote configured but branch origin/{branch} missing for cache at {repo_path}; fetch the branch and retry",
-                reason="missing-remote-branch",
-            )
-
-        if _repository_has_submodules(repo_path):
-            if dry_run:
-                log("RUNNER_GIT_DRY_RUN=1 set; skipping git submodule update --init --recursive")
-            else:
-                log(f"Updating git submodules recursively for {identifier}")
-                submodule_result = _run_git_command(
-                    ["git", "submodule", "update", "--init", "--recursive"],
-                    repo_path,
-                    env,
-                )
-                if submodule_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        submodule_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
-
-        if _repository_uses_lfs(repo_path, env):
-            if shutil.which("git-lfs") is None:
+        with _cache_operation_lock(repo_path, identifier=identifier, log_fn=log):
+            if not repo_path.exists():
                 raise ProjectCacheError(
-                    "Git LFS is required to refresh cache assets but 'git-lfs' was not found on PATH; install Git LFS and retry",
-                    reason="git-lfs-missing",
+                    (
+                        f"Project cache missing at {repo_path}; run 'scripts/project_cache.py --refresh' to rebuild "
+                        "or delete the directory so the next task can bootstrap a fresh clone."
+                    ),
+                    reason="missing-cache",
                 )
-            if dry_run:
-                log("RUNNER_GIT_DRY_RUN=1 set; skipping git lfs fetch/checkout")
+
+            git_dir = repo_path / ".git"
+            if not git_dir.exists():
+                if dry_run:
+                    log(
+                        f"RUNNER_GIT_DRY_RUN=1 set; skipping refresh for uninitialised cache at {repo_path}",
+                    )
+                    commit_hash = "dry-run-skip"
+                    success = True
+                    return commit_hash
+                raise ProjectCacheError(
+                    (
+                        f"Project cache at {repo_path} is not a git repository; run 'git fsck' to diagnose, execute "
+                        "'scripts/project_cache.py --refresh' for automated repair, or delete the cache to allow a fresh bootstrap."
+                    ),
+                    reason="non-git-cache",
+                )
+
+            branch = (default_branch or "").strip()
+            if not branch:
+                raise ProjectCacheError(
+                    "Project default branch is not configured; cannot refresh cache",
+                    reason="missing-default-branch",
+                )
+
+            _ensure_git_repository(repo_path, env)
+            _ensure_repository_integrity(repo_path, env, log, identifier)
+            _ensure_worktree_clean(
+                repo_path,
+                env,
+                allow_force=force,
+                dry_run=dry_run,
+                log_fn=log,
+                identifier=identifier,
+            )
+
+            remote_exists = _remote_exists(repo_path, env, "origin")
+
+            if gitlab_token:
+                askpass_path = _create_askpass_helper()
+                env["GIT_ASKPASS"] = str(askpass_path)
+
+            remote_branch_exists = False
+            if remote_exists:
+                if dry_run:
+                    log(f"RUNNER_GIT_DRY_RUN=1 set; skipping git fetch origin {branch} for {identifier}")
+                else:
+                    log(f"Fetching origin/{branch} for {identifier}")
+                    fetch_start = time.perf_counter()
+                    fetch_result = _run_git_command(
+                        ["git", "fetch", "--tags", "--force", "origin", branch],
+                        repo_path,
+                        env,
+                    )
+                    fetch_duration = time.perf_counter() - fetch_start
+                    _log_git_result(
+                        log,
+                        f"git fetch origin/{branch} for {identifier}",
+                        fetch_result,
+                        duration=fetch_duration,
+                    )
+                    if fetch_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            fetch_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+                remote_branch_exists = _remote_branch_exists(repo_path, env, "origin", branch)
             else:
-                log(f"Fetching Git LFS objects for {identifier}")
-                lfs_fetch_result = _run_git_command(["git", "lfs", "fetch"], repo_path, env)
-                if lfs_fetch_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        lfs_fetch_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
-                log(f"Checking out Git LFS objects for {identifier}")
-                lfs_checkout_result = _run_git_command(["git", "lfs", "checkout"], repo_path, env)
-                if lfs_checkout_result.returncode != 0:
-                    raise _command_error(
-                        repo_path,
-                        lfs_checkout_result,
-                        identifier=identifier,
-                        branch=branch,
-                    )
+                log(f"No origin remote configured for project cache at {repo_path}; skipping fetch")
 
-        additional_branches = [
-            candidate
-            for candidate in _configured_additional_branches()
-            if candidate and candidate != branch
-        ]
-        if additional_branches:
-            for extra_branch in additional_branches:
-                _sync_additional_branch(
+            local_branch_exists = _branch_exists(repo_path, env, branch)
+            if not local_branch_exists:
+                if remote_branch_exists and not dry_run:
+                    log(f"Creating local branch {branch} from origin/{branch} for {identifier}")
+                    checkout_start = time.perf_counter()
+                    checkout_result = _run_git_command(
+                        ["git", "checkout", "-B", branch, f"origin/{branch}"],
+                        repo_path,
+                        env,
+                    )
+                    checkout_duration = time.perf_counter() - checkout_start
+                    _log_git_result(
+                        log,
+                        f"git checkout -B {branch} origin/{branch} for {identifier}",
+                        checkout_result,
+                        duration=checkout_duration,
+                    )
+                    if checkout_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            checkout_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+                    local_branch_exists = True
+                else:
+                    if remote_branch_exists:
+                        message = (
+                            f"Project cache at {repo_path} is missing local branch '{branch}' while origin/{branch} exists. "
+                            f"Run 'git checkout -B {branch} origin/{branch}' and retry."
+                        )
+                    elif remote_exists:
+                        message = (
+                            f"Origin remote configured for cache at {repo_path} but branch origin/{branch} is missing. "
+                            "Update the project default branch or ensure it exists upstream."
+                        )
+                    else:
+                        message = (
+                            f"Project cache at {repo_path} is missing local branch '{branch}'. Configure the branch before running tasks."
+                        )
+                    raise ProjectCacheError(message, reason="missing-local-branch")
+
+            log(f"Checking out {branch} for {identifier}")
+            checkout_start = time.perf_counter()
+            checkout_result = _run_git_command(["git", "checkout", branch], repo_path, env)
+            checkout_duration = time.perf_counter() - checkout_start
+            _log_git_result(
+                log,
+                f"git checkout {branch} for {identifier}",
+                checkout_result,
+                duration=checkout_duration,
+            )
+            if checkout_result.returncode != 0:
+                raise _command_error(
                     repo_path,
-                    env,
-                    extra_branch,
-                    log_fn=log,
+                    checkout_result,
                     identifier=identifier,
-                    dry_run=dry_run,
+                    branch=branch,
                 )
 
-        _ensure_worktree_clean(
-            repo_path,
-            env,
-            allow_force=False,
-            dry_run=dry_run,
-            log_fn=log,
-            identifier=identifier,
-        )
+            if remote_exists and remote_branch_exists:
+                if dry_run:
+                    log(f"RUNNER_GIT_DRY_RUN=1 set; would reset {branch} to origin/{branch} for {identifier}")
+                else:
+                    log(f"Resetting {branch} to origin/{branch} for {identifier}")
+                    reset_start = time.perf_counter()
+                    reset_result = _run_git_command(
+                        ["git", "reset", "--hard", f"origin/{branch}"],
+                        repo_path,
+                        env,
+                    )
+                    reset_duration = time.perf_counter() - reset_start
+                    _log_git_result(
+                        log,
+                        f"git reset --hard origin/{branch} for {identifier}",
+                        reset_result,
+                        duration=reset_duration,
+                    )
+                    if reset_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            reset_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+            elif remote_exists:
+                raise ProjectCacheError(
+                    f"Origin remote configured but branch origin/{branch} missing for cache at {repo_path}; fetch the branch and retry",
+                    reason="missing-remote-branch",
+                )
 
-        commit_hash = _rev_parse_head(repo_path, env)
-        short_hash = commit_hash[:12]
-        log(f"Project cache {identifier} synced to {branch}@{short_hash} ({commit_hash})")
-        success = True
-        return commit_hash
+            if _repository_has_submodules(repo_path):
+                if dry_run:
+                    log("RUNNER_GIT_DRY_RUN=1 set; skipping git submodule update --init --recursive")
+                else:
+                    log(f"Updating git submodules recursively for {identifier}")
+                    submodule_start = time.perf_counter()
+                    submodule_result = _run_git_command(
+                        ["git", "submodule", "update", "--init", "--recursive"],
+                        repo_path,
+                        env,
+                    )
+                    submodule_duration = time.perf_counter() - submodule_start
+                    _log_git_result(
+                        log,
+                        "git submodule update --init --recursive",
+                        submodule_result,
+                        duration=submodule_duration,
+                    )
+                    if submodule_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            submodule_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+
+            if _repository_uses_lfs(repo_path, env):
+                if shutil.which("git-lfs") is None:
+                    raise ProjectCacheError(
+                        "Git LFS is required to refresh cache assets but 'git-lfs' was not found on PATH; install Git LFS and retry",
+                        reason="git-lfs-missing",
+                    )
+                if dry_run:
+                    log("RUNNER_GIT_DRY_RUN=1 set; skipping git lfs fetch/checkout")
+                else:
+                    log(f"Fetching Git LFS objects for {identifier}")
+                    lfs_fetch_start = time.perf_counter()
+                    lfs_fetch_result = _run_git_command(["git", "lfs", "fetch"], repo_path, env)
+                    lfs_fetch_duration = time.perf_counter() - lfs_fetch_start
+                    _log_git_result(
+                        log,
+                        f"git lfs fetch for {identifier}",
+                        lfs_fetch_result,
+                        duration=lfs_fetch_duration,
+                    )
+                    if lfs_fetch_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            lfs_fetch_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+                    log(f"Checking out Git LFS objects for {identifier}")
+                    lfs_checkout_start = time.perf_counter()
+                    lfs_checkout_result = _run_git_command(["git", "lfs", "checkout"], repo_path, env)
+                    lfs_checkout_duration = time.perf_counter() - lfs_checkout_start
+                    _log_git_result(
+                        log,
+                        f"git lfs checkout for {identifier}",
+                        lfs_checkout_result,
+                        duration=lfs_checkout_duration,
+                    )
+                    if lfs_checkout_result.returncode != 0:
+                        raise _command_error(
+                            repo_path,
+                            lfs_checkout_result,
+                            identifier=identifier,
+                            branch=branch,
+                        )
+
+            additional_branches = [
+                candidate
+                for candidate in _configured_additional_branches()
+                if candidate and candidate != branch
+            ]
+            if additional_branches:
+                for extra_branch in additional_branches:
+                    _sync_additional_branch(
+                        repo_path,
+                        env,
+                        extra_branch,
+                        log_fn=log,
+                        identifier=identifier,
+                        dry_run=dry_run,
+                    )
+
+            _ensure_worktree_clean(
+                repo_path,
+                env,
+                allow_force=False,
+                dry_run=dry_run,
+                log_fn=log,
+                identifier=identifier,
+            )
+
+            commit_hash = _rev_parse_head(repo_path, env)
+            short_hash = commit_hash[:12]
+            log(f"Project cache {identifier} synced to {branch}@{short_hash} ({commit_hash})")
+            success = True
+            return commit_hash
     except ProjectCacheError as exc:
         metrics.increment_operation_failure(operation, project_slug, reason=getattr(exc, "reason", "unknown"))
         raise
@@ -815,6 +986,29 @@ def _run_git_command(args: list[str], cwd: Path, env: dict[str, str]) -> subproc
             f"git command {' '.join(args)} failed in {cwd}: {exc}",
             reason="git-command-error",
         ) from exc
+
+
+def _log_git_result(
+    log: Callable[[str], None],
+    description: str,
+    result: subprocess.CompletedProcess,
+    *,
+    duration: float | None = None,
+) -> None:
+    segments = [description, f"exit {result.returncode}"]
+    if duration is not None:
+        segments.append(f"{duration:.2f}s")
+    log("; ".join(segments))
+
+    for label, payload in (("stdout", result.stdout), ("stderr", result.stderr)):
+        if not payload:
+            continue
+        text = _scrub_sensitive_data(payload.decode("utf-8", errors="ignore").strip())
+        if not text:
+            continue
+        if len(text) > _MAX_GIT_LOG_CHARS:
+            text = f"{text[: _MAX_GIT_LOG_CHARS - 3]}..."
+        log(f"{description} {label}: {text}")
 
 
 def _command_error(

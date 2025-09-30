@@ -43,6 +43,7 @@ class EnvConfig:
 class EnvSyncResult:
     gitlab_pat_updated: bool = False
     session_bundle_updated: bool = False
+    session_bundle_error: Optional[str] = None
     project_created: bool = False
     project_updated: bool = False
     codex_token_updated: bool = False
@@ -129,7 +130,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
                 default_branch=config.project_default_branch,  # type: ignore[arg-type]
                 gitlab_host=config.gitlab_host,  # type: ignore[arg-type]
                 gitlab_project_path=config.gitlab_project_path,  # type: ignore[arg-type]
-                gitlab_token=config.gitlab_pat,
             )
             session.add(project)
             session.flush()
@@ -151,10 +151,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
         if value and getattr(project, field) != value:
             setattr(project, field, value)
             updated = True
-
-    if config.gitlab_pat and project.gitlab_token != config.gitlab_pat:
-        project.gitlab_token = config.gitlab_pat
-        updated = True
 
     if config.codex_token:
         manager = get_secret_manager()
@@ -190,13 +186,24 @@ def sync_credentials(config: EnvConfig, *, repo_root: Optional[Path] = None) -> 
                 set_gitlab_pat_token(session, config.gitlab_pat, config.actor)
                 result.gitlab_pat_updated = True
 
-            bundle = _read_session_bundle(config, repo_root)
+            bundle_error: Optional[str] = None
+            bundle: Optional[str]
+            try:
+                bundle = _read_session_bundle(config, repo_root)
+            except EnvSyncError as exc:
+                bundle = None
+                bundle_error = str(exc)
+
             if bundle:
                 try:
                     set_chatgpt_session_bundle(session, bundle, config.actor)
                 except ChatGPTSessionError as exc:
-                    raise EnvSyncError(str(exc)) from exc
-                result.session_bundle_updated = True
+                    bundle_error = str(exc)
+                else:
+                    result.session_bundle_updated = True
+
+            if bundle_error:
+                result.session_bundle_error = bundle_error
 
             project_result = _ensure_project(session, config)
             result.project_created = project_result.project_created

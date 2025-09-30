@@ -265,6 +265,10 @@ def _prepare_git_workspace(target_dir: Path, default_branch: str | None, gitlab_
     """Reset tracked changes, align with the default branch, and drop untracked files."""
     git_dir = target_dir / ".git"
     if not git_dir.exists():
+        logger.warning(
+            "Sanitized workspace %s missing .git directory; skipping git preparation",
+            target_dir,
+        )
         return
 
     base_env = os.environ.copy()
