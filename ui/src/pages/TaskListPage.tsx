@@ -39,6 +39,9 @@ const normalizeFilters = (filters: TaskFilters): TaskFilters => ({
   branch: filters.branch.trim(),
 });
 
+const formatReasoningEffort = (value: string | null | undefined) =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Medium';
+
 function TaskListPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [taskDetail, setTaskDetail] = useState<Task | null>(null);
@@ -46,7 +49,13 @@ function TaskListPage() {
   const [taskLookupId, setTaskLookupId] = useState('');
   const [taskLogs, setTaskLogs] = useState<string[]>([]);
   const [logSnapshotMeta, setLogSnapshotMeta] = useState<
-    { status: TaskStatus; branch: string | null; codex_model: string | null; abort_requested: boolean } | null
+    {
+      status: TaskStatus;
+      branch: string | null;
+      codex_model: string | null;
+      codex_reasoning_effort: string | null;
+      abort_requested: boolean;
+    } | null
   >(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
@@ -257,6 +266,7 @@ function TaskListPage() {
           status: snapshot.status,
           branch: snapshot.branch ?? null,
           codex_model: snapshot.codex_model ?? null,
+          codex_reasoning_effort: snapshot.codex_reasoning_effort ?? 'medium',
           abort_requested: snapshot.abort_requested,
         });
         logSkipRef.current = snapshotEntries.length;
@@ -408,6 +418,7 @@ function TaskListPage() {
       status: taskDetail.status,
       branch: taskDetail.branch ?? null,
       codex_model: taskDetail.codex_model ?? null,
+      codex_reasoning_effort: taskDetail.codex_reasoning_effort ?? 'medium',
       abort_requested: taskDetail.abort_requested,
     });
   }, [taskDetail]);
@@ -509,6 +520,7 @@ function TaskListPage() {
       status: task.status,
       branch: task.branch ?? null,
       codex_model: task.codex_model ?? null,
+      codex_reasoning_effort: task.codex_reasoning_effort ?? 'medium',
       abort_requested: task.abort_requested,
     });
     setTaskLogs([]);
@@ -727,6 +739,7 @@ function TaskListPage() {
                   <th>Finished</th>
                   <th>Codex</th>
                   <th>Model</th>
+                  <th>Reasoning</th>
                   <th>Branch</th>
                   <th>Merge Request</th>
                 </tr>
@@ -734,7 +747,7 @@ function TaskListPage() {
               <tbody>
                 {Array.from({ length: skeletonRowCount }).map((_, rowIndex) => (
                   <tr key={`skeleton-${rowIndex}`}>
-                    {Array.from({ length: 9 }).map((__, cellIndex) => (
+                    {Array.from({ length: 10 }).map((__, cellIndex) => (
                       <td key={cellIndex}>
                         <span
                           className="skeleton skeleton-text"
@@ -762,6 +775,7 @@ function TaskListPage() {
                     <th>Finished</th>
                     <th>Codex</th>
                     <th>Model</th>
+                    <th>Reasoning</th>
                     <th>Branch</th>
                     <th>Merge Request</th>
                   </tr>
@@ -784,6 +798,7 @@ function TaskListPage() {
                         <td>{formatTimestamp(task.finished_at)}</td>
                         <td>{task.codex_invocation ?? '--'}</td>
                         <td>{task.codex_model ?? '--'}</td>
+                        <td>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
                         <td>{task.branch ?? '--'}</td>
                         <td>
                           {task.mr_url ? (
@@ -929,6 +944,10 @@ function TaskListPage() {
                       <dt>Codex Model</dt>
                       <dd>{taskDetail.codex_model ?? '--'}</dd>
                     </div>
+                    <div>
+                      <dt>Reasoning Effort</dt>
+                      <dd>{formatReasoningEffort(taskDetail.codex_reasoning_effort)}</dd>
+                    </div>
                   </dl>
                   <dl>
                     <div>
@@ -1009,6 +1028,10 @@ function TaskListPage() {
                       <div>
                         <dt>Model at capture</dt>
                         <dd>{logSnapshotMeta.codex_model ?? 'Default'}</dd>
+                      </div>
+                      <div>
+                        <dt>Reasoning effort</dt>
+                        <dd>{formatReasoningEffort(logSnapshotMeta.codex_reasoning_effort)}</dd>
                       </div>
                       <div>
                         <dt>Abort requested</dt>

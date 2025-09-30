@@ -135,6 +135,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     agent_version="test-agent",
                     invocation_flags=[],
                     codex_model=kwargs.get("codex_model"),
+                    codex_reasoning_effort=kwargs.get("codex_reasoning_effort"),
                 )
 
             with patch("app.app.worker.run_codex", fake_run_codex):
@@ -211,6 +212,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     agent_version="test-agent",
                     invocation_flags=["--yolo"],
                     codex_model=kwargs.get("codex_model"),
+                    codex_reasoning_effort=kwargs.get("codex_reasoning_effort"),
                 )
 
             with patch("app.app.worker.run_codex", fast_run_codex):

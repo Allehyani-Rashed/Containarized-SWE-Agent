@@ -16,7 +16,13 @@ from sqlalchemy import func
 from sqlmodel import Session, select
 
 from .allowlist import normalize_user_allowlist
-from .codex_models import iter_models, valid_model_ids
+from .codex_models import (
+    default_model_id,
+    default_reasoning_effort,
+    iter_models,
+    valid_model_ids,
+    valid_reasoning_efforts,
+)
 from .database import engine, get_session, init_db
 from .models import AuditLog, Project, Task, TaskStatus
 from .project_cache import project_cache_repo_path
@@ -263,6 +269,15 @@ def _collect_project_metrics(
     return metrics
 
 
+def _task_to_read(task: Task) -> TaskRead:
+    payload = TaskRead.model_validate(task)
+    if not payload.codex_model:
+        payload.codex_model = _normalize_codex_model(None)
+    if not payload.codex_reasoning_effort:
+        payload.codex_reasoning_effort = default_reasoning_effort()
+    return payload
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _worker
@@ -283,6 +298,7 @@ integrations_router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 
 _VALID_CODEX_MODEL_IDS = valid_model_ids()
+_VALID_REASONING_EFFORTS = valid_reasoning_efforts()
 _BRANCH_FORBIDDEN_PATTERN = re.compile(r"[\s~^:?*\\[\\]\\x00-\\x1F\\x7F]")
 
 
@@ -324,14 +340,28 @@ def _normalize_branch_name(raw: str) -> str:
     return branch
 
 
-def _normalize_codex_model(model_id: str | None) -> str | None:
-    if model_id is None:
-        return None
-    candidate = model_id.strip()
+def _normalize_codex_model(model_id: str | None) -> str:
+    candidate = (model_id or "").strip()
     if not candidate:
-        return None
+        default = default_model_id()
+        if default is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="No Codex model configured")
+        return default
     if candidate not in _VALID_CODEX_MODEL_IDS:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown Codex model requested")
+    return candidate
+
+
+def _normalize_codex_reasoning_effort(value: str | None) -> str:
+    candidate = (value or "").strip().lower()
+    if not candidate:
+        return default_reasoning_effort()
+    if candidate not in _VALID_REASONING_EFFORTS:
+        allowed = ", ".join(sorted(_VALID_REASONING_EFFORTS))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid Codex reasoning effort; expected one of: {allowed}",
+        )
     return candidate
 
 
@@ -560,7 +590,8 @@ def get_project_detail(project_id: int, session: Session = Depends(get_session))
             status=task.status,
             prompt=task.prompt,
             branch=task.branch,
-            codex_model=task.codex_model,
+            codex_model=task.codex_model or _normalize_codex_model(None),
+            codex_reasoning_effort=(task.codex_reasoning_effort or default_reasoning_effort()),
             created_at=task.created_at,
             started_at=task.started_at,
             finished_at=task.finished_at,
@@ -725,7 +756,7 @@ def create_task(
     payload: TaskCreate,
     session: Session = Depends(get_session),
     worker: TaskQueueManager = Depends(get_worker),
-) -> Task:
+) -> TaskRead:
     project = session.get(Project, payload.project_id)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
@@ -740,6 +771,7 @@ def create_task(
     normalized_allowlist = normalize_user_allowlist(payload.allowlist or [])
     branch_override = _normalize_branch_name(payload.branch_name) if payload.branch_name else None
     codex_model = _normalize_codex_model(payload.codex_model)
+    reasoning_effort = _normalize_codex_reasoning_effort(payload.codex_reasoning_effort)
 
     task = Task(
         project_id=payload.project_id,
@@ -748,6 +780,7 @@ def create_task(
         status=TaskStatus.pending,
         branch=branch_override,
         codex_model=codex_model,
+        codex_reasoning_effort=reasoning_effort,
     )
     session.add(task)
     session.commit()
@@ -755,7 +788,7 @@ def create_task(
 
     worker.register_task(task.id)
     worker.enqueue(task.id)
-    return task
+    return _task_to_read(task)
 
 
 @app.get("/tasks", response_model=TaskListResponse)
@@ -787,8 +820,9 @@ def list_tasks(
         if statuses:
             filters.append(Task.status.in_(list(statuses)))
 
-    if codex_model:
-        filters.append(Task.codex_model == codex_model.strip())
+    if codex_model is not None:
+        normalized_model = _normalize_codex_model(codex_model)
+        filters.append(Task.codex_model == normalized_model)
 
     if branch:
         branch_query = branch.strip().lower()
@@ -808,7 +842,7 @@ def list_tasks(
         base_query.order_by(Task.created_at.desc(), Task.id.desc()).offset(offset).limit(limit)
     ).all()
 
-    items = [TaskRead.model_validate(row) for row in rows]
+    items = [_task_to_read(row) for row in rows]
     next_offset = offset + limit if offset + limit < total else None
 
     return TaskListResponse(
@@ -821,11 +855,11 @@ def list_tasks(
 
 
 @app.get("/tasks/{task_id}", response_model=TaskRead)
-def get_task(task_id: int, session: Session = Depends(get_session)) -> Task:
+def get_task(task_id: int, session: Session = Depends(get_session)) -> TaskRead:
     task = session.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
-    return task
+    return _task_to_read(task)
 
 
 @app.post("/tasks/{task_id}/abort", response_model=TaskRead)
@@ -834,7 +868,7 @@ def abort_task(
     payload: TaskAbortRequest | None = Body(default=None),
     session: Session = Depends(get_session),
     worker: TaskQueueManager = Depends(get_worker),
-) -> Task:
+) -> TaskRead:
     task = session.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
@@ -868,7 +902,7 @@ def abort_task(
         worker.record_task_log(task_id, log_message)
         worker.mark_task_aborted(task_id)
         session.refresh(task)
-        return task
+        return _task_to_read(task)
 
     task.abort_requested = True
     session.add(task)
@@ -877,7 +911,7 @@ def abort_task(
     worker.record_task_log(task_id, log_message)
     worker.request_abort(task_id)
     session.refresh(task)
-    return task
+    return _task_to_read(task)
 
 
 @app.get("/tasks/{task_id}/logs")
@@ -899,6 +933,7 @@ async def get_task_logs(
             status=task.status,
             branch=task.branch,
             codex_model=task.codex_model,
+            codex_reasoning_effort=task.codex_reasoning_effort or default_reasoning_effort(),
             abort_requested=bool(task.abort_requested),
         )
 

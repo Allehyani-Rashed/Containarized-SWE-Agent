@@ -30,6 +30,7 @@ export type ProjectTaskSummary = {
   prompt: string;
   branch: string | null;
   codex_model: string | null;
+  codex_reasoning_effort: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -72,6 +73,7 @@ export type Task = {
   codex_agent_version: string | null;
   codex_invocation: string | null;
   codex_model: string | null;
+  codex_reasoning_effort: string | null;
   abort_requested: boolean;
   cache_commit: string | null;
 };
@@ -90,6 +92,7 @@ export type TaskLogsSnapshot = {
   status: TaskStatus;
   branch: string | null;
   codex_model: string | null;
+  codex_reasoning_effort: string | null;
   abort_requested: boolean;
 };
 
@@ -125,6 +128,7 @@ export type TaskCreatePayload = {
   allowlist: string[];
   branch_name?: string;
   codex_model?: string;
+  codex_reasoning_effort?: string;
 };
 
 export type PatStorePayload = {

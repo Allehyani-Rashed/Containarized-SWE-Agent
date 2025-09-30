@@ -15,6 +15,12 @@ from uuid import uuid4
 from sqlmodel import Session, select
 
 from .allowlist import merge_allowlists, refresh_proxy_allowlist
+from .codex_models import (
+    default_model_id,
+    default_reasoning_effort,
+    valid_model_ids,
+    valid_reasoning_efforts,
+)
 from .codex_runner import CodexRunnerAborted, CodexRunnerError, run_codex
 from .integrations import (
     ChatGPTSessionError,
@@ -224,7 +230,8 @@ class TaskQueueManager:
         target_branch = ""
         gitlab_host = ""
         gitlab_project_path = ""
-        codex_model = None
+        codex_model = default_model_id() or None
+        codex_reasoning_effort = default_reasoning_effort()
         try:
             with Session(self._engine) as session:
                 task = session.get(Task, task_id)
@@ -267,7 +274,18 @@ class TaskQueueManager:
                 branch_was_provided = bool(task.branch)
                 if not branch_was_provided:
                     task.branch = branch_name
-                codex_model = (task.codex_model or None)
+                task_model = (task.codex_model or "").strip()
+                if not task_model:
+                    codex_model = default_model_id()
+                elif task_model not in valid_model_ids():
+                    codex_model = default_model_id()
+                else:
+                    codex_model = task_model
+                task_effort = (task.codex_reasoning_effort or "").strip().lower()
+                if task_effort in valid_reasoning_efforts():
+                    codex_reasoning_effort = task_effort
+                else:
+                    codex_reasoning_effort = default_reasoning_effort()
                 try:
                     gitlab_token = self._resolve_gitlab_token(session)
                 except SecretError as exc:
@@ -398,8 +416,10 @@ class TaskQueueManager:
                 self._append_log(task_id, f"Using requested branch: {branch_name}")
             else:
                 self._append_log(task_id, f"Proposed branch name: {branch_name}")
-            if codex_model:
-                self._append_log(task_id, f"Codex model override: {codex_model}")
+            self._append_log(
+                task_id,
+                f"Codex model: {codex_model} (reasoning effort: {codex_reasoning_effort})",
+            )
 
             if project_root is None:
                 self._append_log(task_id, "Unable to determine project root; aborting")
@@ -597,6 +617,7 @@ class TaskQueueManager:
                     mr_title=mr_title,
                     task_id=task_id,
                     codex_model=codex_model,
+                    codex_reasoning_effort=codex_reasoning_effort,
                     log_fn=lambda message: self._append_log(task_id, f"codex: {message}"),
                     abort_event=abort_signal,
                 )
@@ -646,6 +667,9 @@ class TaskQueueManager:
                     task.codex_agent_version = result.agent_version
                     task.codex_invocation = flags_str or None
                     task.codex_model = result.codex_model or codex_model
+                    task.codex_reasoning_effort = (
+                        result.codex_reasoning_effort or codex_reasoning_effort
+                    )
                     session.add(task)
                     session.commit()
                 self._mark_complete(task_id)
@@ -672,6 +696,9 @@ class TaskQueueManager:
                 task.codex_agent_version = result.agent_version
                 task.codex_invocation = flags_str or None
                 task.codex_model = result.codex_model or codex_model
+                task.codex_reasoning_effort = (
+                    result.codex_reasoning_effort or codex_reasoning_effort
+                )
                 session.add(task)
                 session.commit()
 

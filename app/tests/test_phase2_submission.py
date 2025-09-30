@@ -86,6 +86,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
                     "allowlist": [],
                     "branch_name": "feature/custom-branch",
                     "codex_model": chosen_model,
+                    "codex_reasoning_effort": "high",
                 },
             )
             self.assertEqual(task_resp.status_code, 201)
@@ -106,6 +107,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(final_payload["status"], "done")
             self.assertEqual(final_payload["branch"], "feature/custom-branch")
             self.assertEqual(final_payload["codex_model"], chosen_model)
+            self.assertEqual(final_payload["codex_reasoning_effort"], "high")
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
@@ -114,10 +116,14 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(snapshot_payload.get("status"), "done")
             self.assertEqual(snapshot_payload.get("branch"), "feature/custom-branch")
             self.assertEqual(snapshot_payload.get("codex_model"), chosen_model)
+            self.assertEqual(snapshot_payload.get("codex_reasoning_effort"), "high")
             self.assertFalse(snapshot_payload.get("abort_requested", False))
             joined = "\n".join(entries)
             self.assertIn("Using requested branch: feature/custom-branch", joined)
-            self.assertIn(f"Codex model override: {chosen_model}", joined)
+            self.assertIn(
+                f"Codex model: {chosen_model} (reasoning effort: high)",
+                joined,
+            )
 
     def test_rejects_invalid_branch(self) -> None:
         _, project_id = self._prepare_project()
@@ -135,6 +141,23 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
             detail = response.json().get("detail")
             self.assertIn("Branch name", detail)
+
+    def test_rejects_invalid_reasoning_effort(self) -> None:
+        _, project_id = self._prepare_project()
+
+        with TestClient(self.main.app) as client:
+            response = client.post(
+                "/tasks",
+                json={
+                    "project_id": project_id,
+                    "prompt": "Invalid reasoning effort",
+                    "allowlist": [],
+                    "codex_reasoning_effort": "extreme",
+                },
+            )
+            self.assertEqual(response.status_code, 400)
+            detail = response.json().get("detail")
+            self.assertIn("reasoning effort", detail)
 
     def test_rejects_unknown_model(self) -> None:
         _, project_id = self._prepare_project()

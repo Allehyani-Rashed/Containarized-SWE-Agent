@@ -22,16 +22,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
-from fastapi.testclient import TestClient
-
-from app.app.project_cache import ensure_cache_root, project_cache_repo_path
-
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_DIVIDER = "-" * 60
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+from fastapi.testclient import TestClient
+
+from app.app.project_cache import ensure_cache_root, project_cache_repo_path
 
 
 def _reset_app_modules() -> None:
@@ -46,7 +45,7 @@ def _bootstrap_app() -> TestClient:
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
-from app.app import main as main_module
+    from app.app import main as main_module
 
     return TestClient(main_module.app)
 
@@ -197,6 +196,13 @@ def _parse_args() -> argparse.Namespace:
         help="Optional Codex model identifier to use for the task run",
     )
     parser.add_argument(
+        "--codex-reasoning-effort",
+        dest="codex_reasoning_effort",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Codex reasoning effort to request (default: medium)",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="Disable RUNNER_GIT_DRY_RUN and push to GitLab (requires valid token and allowlisted network)",
@@ -250,6 +256,7 @@ def _submit_task(
     *,
     branch_name: Optional[str] = None,
     codex_model: Optional[str] = None,
+    codex_reasoning_effort: Optional[str] = None,
 ) -> int:
     payload = {
         "project_id": project_id,
@@ -260,6 +267,8 @@ def _submit_task(
         payload["branch_name"] = branch_name
     if codex_model:
         payload["codex_model"] = codex_model
+    if codex_reasoning_effort:
+        payload["codex_reasoning_effort"] = codex_reasoning_effort
 
     response = client.post("/tasks", json=payload)
     response.raise_for_status()
@@ -286,12 +295,14 @@ def _print_logs(client: TestClient, task_id: int) -> list[str]:
     snapshot_status = payload.get("status")
     snapshot_branch = payload.get("branch") or "--"
     snapshot_model = payload.get("codex_model") or "default"
+    snapshot_reasoning = payload.get("codex_reasoning_effort") or "medium"
     snapshot_abort = payload.get("abort_requested", False)
     print(LOG_DIVIDER)
     print("Task log snapshot:")
     print(
         f"- Status at capture: {snapshot_status or '--'} | Branch: {snapshot_branch} | "
-        f"Model: {snapshot_model} | Abort requested: {'yes' if snapshot_abort else 'no'}"
+        f"Model: {snapshot_model} | Reasoning: {snapshot_reasoning} | "
+        f"Abort requested: {'yes' if snapshot_abort else 'no'}"
     )
     for entry in entries:
         print(entry)
@@ -483,14 +494,16 @@ def main() -> None:
                     allowlist,
                     branch_name=args.branch_name,
                     codex_model=args.codex_model,
+                    codex_reasoning_effort=args.codex_reasoning_effort,
                 )
                 print(
-                    "Submitted task {task_id} (project_id={pid}, allowlist={allowlist}, branch={branch}, model={model})".format(
+                    "Submitted task {task_id} (project_id={pid}, allowlist={allowlist}, branch={branch}, model={model}, reasoning={reasoning})".format(
                         task_id=task_id,
                         pid=project_id,
                         allowlist=allowlist or "[]",
                         branch=args.branch_name or "<generated>",
                         model=args.codex_model or "<default>",
+                        reasoning=args.codex_reasoning_effort,
                     )
                 )
                 created_task = True
@@ -508,6 +521,8 @@ def main() -> None:
                 print(f"Branch recorded: {result['branch']}")
             if result.get("codex_model"):
                 print(f"Codex model used: {result['codex_model']}")
+            if result.get("codex_reasoning_effort"):
+                print(f"Reasoning effort: {result['codex_reasoning_effort']}")
             if result.get("codex_agent_version"):
                 print(f"Codex agent version: {result['codex_agent_version']}")
             if result.get("codex_invocation"):

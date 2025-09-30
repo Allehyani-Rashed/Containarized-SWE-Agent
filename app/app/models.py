@@ -73,5 +73,6 @@ class Task(SQLModel, table=True):
     codex_agent_version: Optional[str] = Field(default=None, nullable=True)
     codex_invocation: Optional[str] = Field(default=None, nullable=True)
     codex_model: Optional[str] = Field(default=None, nullable=True)
+    codex_reasoning_effort: Optional[str] = Field(default=None, nullable=True)
     abort_requested: bool = Field(default=False, nullable=False)
     cache_commit: Optional[str] = Field(default=None, nullable=True)

@@ -126,6 +126,7 @@ def _ensure_task_columns(db_engine) -> None:
         "codex_agent_version": "ALTER TABLE task ADD COLUMN codex_agent_version VARCHAR",
         "codex_invocation": "ALTER TABLE task ADD COLUMN codex_invocation VARCHAR",
         "codex_model": "ALTER TABLE task ADD COLUMN codex_model VARCHAR",
+        "codex_reasoning_effort": "ALTER TABLE task ADD COLUMN codex_reasoning_effort VARCHAR",
         "abort_requested": "ALTER TABLE task ADD COLUMN abort_requested BOOLEAN NOT NULL DEFAULT 0",
         "cache_commit": "ALTER TABLE task ADD COLUMN cache_commit VARCHAR",
     }

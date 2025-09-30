@@ -12,6 +12,9 @@ const allowlistLabels: Record<ProjectAllowlistStatus, string> = {
   unknown: 'No runs yet',
 };
 
+const formatReasoningEffort = (value: string | null | undefined) =>
+  value ? value.charAt(0).toUpperCase() + value.slice(1) : 'Medium';
+
 function ProjectDetailPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
@@ -266,6 +269,7 @@ function ProjectDetailPage() {
                     <th>Status</th>
                     <th>Branch</th>
                     <th>Model</th>
+                    <th>Reasoning</th>
                     <th>Cache Commit</th>
                     <th>Allowlist Entries</th>
                     <th>Created</th>
@@ -281,6 +285,7 @@ function ProjectDetailPage() {
                       </td>
                       <td>{task.branch ?? 'Auto-generated'}</td>
                       <td>{task.codex_model ?? 'Default'}</td>
+                      <td>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
                       <td>{task.cache_commit ? task.cache_commit.slice(0, 12) : '—'}</td>
                       <td>{task.allowlist_size}</td>
                       <td>{formatTimestamp(task.created_at)}</td>

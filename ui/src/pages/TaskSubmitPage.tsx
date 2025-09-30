@@ -14,6 +14,7 @@ const initialFormState: TaskSubmissionFormState = {
   allowlist: '',
   branchName: '',
   codexModel: '',
+  codexReasoningEffort: 'medium',
 };
 
 function TaskSubmitPage() {
@@ -113,6 +114,9 @@ function TaskSubmitPage() {
     }
     if (form.codexModel) {
       payload.codex_model = form.codexModel;
+    }
+    if (form.codexReasoningEffort) {
+      payload.codex_reasoning_effort = form.codexReasoningEffort;
     }
 
     setSubmitting(true);

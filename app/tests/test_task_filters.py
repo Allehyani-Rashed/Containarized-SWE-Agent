@@ -62,7 +62,8 @@ class TaskListFilterTests(unittest.TestCase):
                     "project_id": project_id,
                     "prompt": "Finished task",
                     "branch_name": "feature/login",
-                    "codex_model": "gpt-4o-mini",
+                    "codex_model": "gpt-5-codex",
+                    "codex_reasoning_effort": "high",
                 },
             )
             self.assertEqual(first.status_code, 201, first.text)
@@ -146,11 +147,12 @@ class TaskListFilterTests(unittest.TestCase):
             statuses = {item["status"] for item in status_payload["items"]}
             self.assertSetEqual(statuses, {"done", "failed"})
 
-            model_resp = client.get("/tasks", params={"codex_model": "gpt-4o-mini"})
+            model_resp = client.get("/tasks", params={"codex_model": "gpt-5-codex"})
             self.assertEqual(model_resp.status_code, 200)
             model_payload = model_resp.json()
-            self.assertEqual(model_payload["total"], 1)
-            self.assertEqual(model_payload["items"][0]["codex_model"], "gpt-4o-mini")
+            self.assertEqual(model_payload["total"], 3)
+            for item in model_payload["items"]:
+                self.assertEqual(item["codex_model"], "gpt-5-codex")
 
     def test_branch_filter_is_case_insensitive(self) -> None:
         with TestClient(self.main.app) as client:

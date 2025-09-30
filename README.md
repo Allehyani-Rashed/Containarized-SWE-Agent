@@ -64,7 +64,7 @@ curl -sS -X POST "$BACKEND_API_BASE/tasks" \
 JSON
 ```
 Watch the run live in the dashboard. When Docker is available the orchestrator spins up the runner image and streams its output; locally you can dry-run with `RUNNER_GIT_DRY_RUN=1`.
-Provide `branch_name` and `codex_model` if you want Codex to work off a specific branch or model; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
+Provide `branch_name`, `codex_model` (defaults to `gpt-5-codex`), and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to work off a specific branch, model, or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
 
 ## Everyday Commands
 - `make dev` – run backend + UI together.

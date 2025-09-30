@@ -33,6 +33,10 @@ if [[ -n "${CODEX_MODEL_ID:-}" ]]; then
   echo "[codex-launch] Selected Codex model: ${CODEX_MODEL_ID}" >&2
 fi
 
+if [[ -n "${CODEX_MODEL_REASONING_EFFORT:-}" ]]; then
+  echo "[codex-launch] Reasoning effort: ${CODEX_MODEL_REASONING_EFFORT}" >&2
+fi
+
 ALLOW_STUB=${CODEX_ALLOW_STUB:-0}
 if [[ "${BIN_SIGNATURE}" != "7f454c46" ]]; then
   if [[ "${ALLOW_STUB}" != "1" ]]; then
@@ -65,6 +69,11 @@ append_flag_if_missing() {
 
 append_flag_if_missing "--skip-git-repo-check"
 
+if [[ -n "${CODEX_MODEL_REASONING_EFFORT:-}" ]]; then
+  FLAG_ARRAY+=("--config")
+  FLAG_ARRAY+=("model_reasoning_effort=\"${CODEX_MODEL_REASONING_EFFORT}\"")
+fi
+
 export CODEX_INVOCATION_FLAGS="${FLAG_ARRAY[*]}"
 
 python3 - <<'PY'
@@ -87,6 +96,9 @@ payload = {"agent_version": version, "mode": "docker", "flags": flags}
 model = os.environ.get("CODEX_MODEL_ID")
 if model:
     payload["model"] = model
+effort = os.environ.get("CODEX_MODEL_REASONING_EFFORT")
+if effort:
+    payload["model_reasoning_effort"] = effort
 metadata_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 PY
 

@@ -84,7 +84,8 @@ class ProjectCrudTests(unittest.TestCase):
                         "project_id": project_id,
                         "prompt": "custom allowlist",
                         "allowlist": ["src/"],
-                        "codex_model": "gpt-4o-mini",
+                        "codex_model": "gpt-5-codex",
+                        "codex_reasoning_effort": "low",
                     },
                 )
                 self.assertEqual(second_task.status_code, 201, second_task.text)
@@ -121,7 +122,8 @@ class ProjectCrudTests(unittest.TestCase):
             self.assertIsNotNone(payload["last_task_at"])
             self.assertEqual(len(payload["recent_tasks"]), 2)
             latest_task = payload["recent_tasks"][0]
-            self.assertEqual(latest_task["codex_model"], "gpt-4o-mini")
+            self.assertEqual(latest_task["codex_model"], "gpt-5-codex")
+            self.assertEqual(latest_task["codex_reasoning_effort"], "low")
             self.assertEqual(latest_task["allowlist_size"], 1)
 
     def test_update_project_supports_field_changes_and_token_management(self) -> None:

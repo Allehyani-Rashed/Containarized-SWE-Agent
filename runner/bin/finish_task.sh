@@ -25,6 +25,7 @@ done
 WORKDIR=$(pwd)
 TASK_ID_LABEL=${TASK_ID:-unknown}
 MODEL_ID=${CODEX_MODEL_ID:-}
+MODEL_REASONING=${CODEX_MODEL_REASONING_EFFORT:-}
 
 GITLAB_HOST_RAW=${GITLAB_HOST%/}
 if [[ ! "$GITLAB_HOST_RAW" =~ ^https?:// ]]; then
@@ -44,6 +45,9 @@ DRY_RUN=${RUNNER_GIT_DRY_RUN:-0}
 log "Preparing git workspace for task ${TASK_ID_LABEL}"
 if [[ -n "${MODEL_ID}" ]]; then
   log "Using Codex model ${MODEL_ID}"
+fi
+if [[ -n "${MODEL_REASONING}" ]]; then
+  log "Using reasoning effort ${MODEL_REASONING}"
 fi
 
 git config --global user.name "${GIT_USER_NAME:-Codex Runner}"
@@ -223,6 +227,7 @@ output = {
     "branch": os.environ.get("BRANCH", ""),
     "mr_url": os.environ.get("MR_URL", ""),
     "codex_model": os.environ.get("CODEX_MODEL_ID", ""),
+    "codex_reasoning_effort": os.environ.get("CODEX_MODEL_REASONING_EFFORT", ""),
 }
 path.write_text(json.dumps(output) + "\n", encoding="utf-8")
 PY

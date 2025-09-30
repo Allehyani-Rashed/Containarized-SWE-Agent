@@ -61,6 +61,7 @@ class ProjectTaskSummary(SQLModel):
     prompt: str
     branch: Optional[str]
     codex_model: Optional[str]
+    codex_reasoning_effort: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
@@ -115,6 +116,7 @@ class TaskCreate(SQLModel):
     allowlist: List[str] = Field(default_factory=list)
     branch_name: Optional[str] = None
     codex_model: Optional[str] = None
+    codex_reasoning_effort: Optional[str] = None
 
 
 class TaskRead(SQLModel):
@@ -132,6 +134,7 @@ class TaskRead(SQLModel):
     codex_agent_version: Optional[str]
     codex_invocation: Optional[str]
     codex_model: Optional[str]
+    codex_reasoning_effort: Optional[str]
     abort_requested: bool
     cache_commit: Optional[str]
 
@@ -159,6 +162,7 @@ class TaskLogSnapshot(SQLModel):
     status: TaskStatus
     branch: Optional[str]
     codex_model: Optional[str]
+    codex_reasoning_effort: Optional[str]
     abort_requested: bool
 
 

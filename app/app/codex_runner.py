@@ -15,6 +15,7 @@ import docker
 from docker.errors import APIError, DockerException, ImageNotFound
 
 from .allowlist import proxy_environment
+from .codex_models import default_reasoning_effort
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_CONTEXT = REPO_ROOT / "runner"
@@ -45,6 +46,7 @@ class CodexResult:
     agent_version: Optional[str] = None
     invocation_flags: list[str] = field(default_factory=list)
     codex_model: Optional[str] = None
+    codex_reasoning_effort: Optional[str] = None
 
 
 class CodexRunnerError(RuntimeError):
@@ -70,6 +72,7 @@ def run_codex(
     mr_title: str,
     task_id: int,
     codex_model: Optional[str] = None,
+    codex_reasoning_effort: Optional[str] = None,
     log_fn: Optional[Callable[[str], None]] = None,
     abort_event: Optional[Event] = None,
 ) -> CodexResult:
@@ -89,6 +92,8 @@ def run_codex(
             except OSError:
                 # Stale metadata from previous runs is best-effort removed.
                 pass
+
+    reasoning_effort = codex_reasoning_effort or default_reasoning_effort()
 
     runner_env = {
         "GITLAB_TOKEN": gitlab_token,
@@ -124,6 +129,9 @@ def run_codex(
     if codex_model:
         runner_env["CODEX_MODEL_ID"] = codex_model
 
+    if reasoning_effort:
+        runner_env["CODEX_MODEL_REASONING_EFFORT"] = reasoning_effort
+
     if os.environ.get("RUNNER_DISABLE_DOCKER", "0") == "1":
         exit_code = _run_local_stub(
             workspace,
@@ -134,9 +142,9 @@ def run_codex(
             abort_event=abort_event,
         )
         if exit_code == 0:
-            result_branch, mr_url, result_model = _load_finish_metadata(result_path, log_fn)
+            result_branch, mr_url, result_model, result_effort = _load_finish_metadata(result_path, log_fn)
         else:
-            result_branch, mr_url, result_model = None, None, None
+            result_branch, mr_url, result_model, result_effort = None, None, None, None
         agent_version, flags = _load_metadata(metadata_path, log_fn)
         return CodexResult(
             exit_code=exit_code,
@@ -146,6 +154,7 @@ def run_codex(
             agent_version=agent_version,
             invocation_flags=flags,
             codex_model=result_model or codex_model,
+            codex_reasoning_effort=result_effort or reasoning_effort,
         )
 
     try:
@@ -174,9 +183,9 @@ def run_codex(
     else:
         used_docker = True
     if exit_code == 0:
-        result_branch, mr_url, result_model = _load_finish_metadata(result_path, log_fn)
+        result_branch, mr_url, result_model, result_effort = _load_finish_metadata(result_path, log_fn)
     else:
-        result_branch, mr_url, result_model = None, None, None
+        result_branch, mr_url, result_model, result_effort = None, None, None, None
     agent_version, flags = _load_metadata(metadata_path, log_fn)
     return CodexResult(
         exit_code=exit_code,
@@ -186,6 +195,7 @@ def run_codex(
         agent_version=agent_version,
         invocation_flags=flags,
         codex_model=result_model or codex_model,
+        codex_reasoning_effort=result_effort or reasoning_effort,
     )
 
 
@@ -404,11 +414,11 @@ def _run_finish_task_local(
 def _load_finish_metadata(
     result_path: Path,
     log_fn: Optional[Callable[[str], None]],
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     if not result_path.exists():
         if log_fn:
             log_fn(f"finish_task metadata not found at {result_path}")
-        return None, None
+        return None, None, None, None
 
     try:
         content = result_path.read_text(encoding="utf-8")
@@ -416,12 +426,13 @@ def _load_finish_metadata(
     except (OSError, json.JSONDecodeError) as exc:
         if log_fn:
             log_fn(f"Unable to parse finish_task metadata: {exc}")
-        return None, None
+        return None, None, None, None
 
     branch = data.get("branch")
     mr_url = data.get("mr_url")
     codex_model = data.get("codex_model") or None
-    return branch, mr_url, codex_model
+    reasoning_effort = data.get("codex_reasoning_effort") or None
+    return branch, mr_url, codex_model, reasoning_effort
 
 
 def _load_metadata(metadata_path: Path, log_fn: Optional[Callable[[str], None]]) -> tuple[Optional[str], list[str]]:

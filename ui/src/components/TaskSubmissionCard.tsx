@@ -7,6 +7,7 @@ export type TaskSubmissionFormState = {
   allowlist: string;
   branchName: string;
   codexModel: string;
+  codexReasoningEffort: 'low' | 'medium' | 'high';
 };
 
 type SubmitHandler = FormEventHandler<HTMLFormElement>;
@@ -35,6 +36,18 @@ function TaskSubmissionCard({
   const selectedModel = useMemo(() => {
     return models.find((model) => model.id === form.codexModel) ?? null;
   }, [form.codexModel, models]);
+
+  const reasoningOptions: Array<{ value: 'low' | 'medium' | 'high'; label: string }> = [
+    { value: 'low', label: 'Low (fastest)' },
+    { value: 'medium', label: 'Medium (default)' },
+    { value: 'high', label: 'High (deepest)' },
+  ];
+  const reasoningDescriptions: Record<'low' | 'medium' | 'high', string> = {
+    low: 'Favors speed and cost; suited for straightforward edits.',
+    medium: 'Balances quality and latency; recommended default.',
+    high: 'Allocates more reasoning time for complex tasks.',
+  };
+  const reasoningHint = reasoningDescriptions[form.codexReasoningEffort];
 
   const modelsAvailable = models.length > 0;
 
@@ -113,6 +126,26 @@ function TaskSubmissionCard({
         {selectedModel?.description ? (
           <p className="field-hint">{selectedModel.description}</p>
         ) : null}
+
+        <label>
+          Reasoning Effort
+          <select
+            value={form.codexReasoningEffort}
+            onChange={(event) =>
+              setForm((prev) => ({
+                ...prev,
+                codexReasoningEffort: event.target.value as 'low' | 'medium' | 'high',
+              }))
+            }
+          >
+            {reasoningOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="field-hint">{reasoningHint}</p>
 
         {!patStatus.configured && (
           <p className="notice notice-warning">

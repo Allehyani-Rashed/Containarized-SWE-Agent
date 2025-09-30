@@ -14,20 +14,10 @@ class CodexModelInfo:
 
 CODEX_MODELS: tuple[CodexModelInfo, ...] = (
     CodexModelInfo(
-        id="gpt-4o-mini",
-        label="GPT-4o Mini",
-        description="Fast, general-purpose model suitable for most task automation runs.",
+        id="gpt-5-codex",
+        label="GPT-5 Codex",
+        description="Latest Codex-tuned GPT model with configurable reasoning effort.",
         is_default=True,
-    ),
-    CodexModelInfo(
-        id="gpt-4o",
-        label="GPT-4o",
-        description="Higher quality reasoning with increased latency and cost profile.",
-    ),
-    CodexModelInfo(
-        id="o1-preview",
-        label="o1 Preview",
-        description="Experimental preview model for advanced planning workflows.",
     ),
 )
 
@@ -45,3 +35,14 @@ def default_model_id() -> str | None:
 
 def iter_models() -> Iterable[CodexModelInfo]:
     return CODEX_MODELS
+
+
+CODEX_REASONING_EFFORTS: tuple[str, ...] = ("low", "medium", "high")
+
+
+def valid_reasoning_efforts() -> set[str]:
+    return set(CODEX_REASONING_EFFORTS)
+
+
+def default_reasoning_effort() -> str:
+    return "medium"
