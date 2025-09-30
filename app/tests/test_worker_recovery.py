@@ -61,7 +61,6 @@ class WorkerRecoveryTests(unittest.TestCase):
                 project_id=project.id,
                 prompt="stale pending task",
                 status=self.TaskStatus.pending,
-                allowlist=[],
             )
             # Ensure the record predates worker boot time.
             task.created_at = datetime.now(timezone.utc) - timedelta(minutes=5)
@@ -100,7 +99,6 @@ class WorkerRecoveryTests(unittest.TestCase):
                 project_id=project.id,
                 prompt="older pending",
                 status=self.TaskStatus.pending,
-                allowlist=[],
             )
             older_task.created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
             session.add(older_task)
@@ -109,7 +107,6 @@ class WorkerRecoveryTests(unittest.TestCase):
                 project_id=project.id,
                 prompt="newer pending",
                 status=self.TaskStatus.pending,
-                allowlist=[],
             )
             newer_task.created_at = datetime.now(timezone.utc) + timedelta(minutes=10)
             session.add(newer_task)

@@ -77,7 +77,6 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     json={
                         "project_id": project_id,
                         "prompt": "pending abort",
-                        "allowlist": [],
                     },
                 )
             self.assertEqual(create_response.status_code, 201)
@@ -144,7 +143,6 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     json={
                         "project_id": project_id,
                         "prompt": "running abort",
-                        "allowlist": [],
                     },
                 )
             self.assertEqual(create_response.status_code, 201)
@@ -221,7 +219,6 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     json={
                         "project_id": project_id,
                         "prompt": "delete me",
-                        "allowlist": [],
                     },
                 )
             self.assertEqual(create_response.status_code, 201)

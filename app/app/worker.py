@@ -214,7 +214,7 @@ class TaskQueueManager:
         abort_signal = self._get_abort_signal(task_id)
         project_root: Path | None = None
         task_prompt = ""
-        task_allowlist: list[str] = []
+        project_allowlist: list[str] = []
         project_gitlab_host = ""
         gitlab_token = ""
         project_default_branch = ""
@@ -266,8 +266,22 @@ class TaskQueueManager:
                 task.status = TaskStatus.running
                 task.started_at = datetime.now(timezone.utc)
                 task_prompt = task.prompt or ""
-                task_allowlist = list(task.allowlist or [])
-                target_branch = project_default_branch
+                stored_mr_title = (task.mr_title or "").strip()
+                if stored_mr_title:
+                    mr_title = stored_mr_title
+                else:
+                    mr_title = _build_mr_title(task_id, task_prompt)
+                    task.mr_title = mr_title
+                project_allowlist = list(project.allowlist or [])
+                stored_target_branch = (task.target_branch or "").strip()
+                if stored_target_branch:
+                    target_branch = stored_target_branch
+                else:
+                    target_branch = project_default_branch
+                    if target_branch:
+                        task.target_branch = target_branch
+                        session.add(task)
+                        session.commit()
                 gitlab_host = project.gitlab_host
                 gitlab_project_path = project.gitlab_project_path
                 branch_name = (task.branch or "").strip() or _generate_branch_name(task_id)
@@ -411,7 +425,17 @@ class TaskQueueManager:
                     # Base64 encoding failure should not block task execution; raw value already registered.
                     pass
             self._register_redactions(task_id, redactions)
-            mr_title = _build_mr_title(task_id, task_prompt)
+            if not mr_title:
+                mr_title = _build_mr_title(task_id, task_prompt)
+            mr_title_display = " ".join(str(mr_title).splitlines())
+            self._append_log(task_id, f"Merge request title: {mr_title_display}")
+            if target_branch:
+                if project_default_branch and target_branch != project_default_branch:
+                    self._append_log(task_id, f"Base branch override: {target_branch}")
+                else:
+                    self._append_log(task_id, f"Base branch: {target_branch}")
+            else:
+                self._append_log(task_id, "Base branch unavailable; falling back to project default")
             if branch_was_provided:
                 self._append_log(task_id, f"Using requested branch: {branch_name}")
             else:
@@ -578,9 +602,9 @@ class TaskQueueManager:
 
             self._append_log(task_id, "Launching codex runner")
             try:
-                effective_allowlist = merge_allowlists(project_gitlab_host, task_allowlist)
+                effective_allowlist = merge_allowlists(project_gitlab_host, project_allowlist)
             except Exception as exc:  # noqa: BLE001 - capture normalization failures
-                effective_allowlist = list(task_allowlist)
+                effective_allowlist = list(project_allowlist)
                 self._append_log(task_id, f"Allowlist normalization failed ({exc}); using raw entries")
             else:
                 joined_allowlist = ", ".join(effective_allowlist) or "<empty>"

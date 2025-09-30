@@ -82,15 +82,20 @@ def _ensure_project_columns(db_engine) -> None:
         "codex_token_updated_at": "ALTER TABLE project ADD COLUMN codex_token_updated_at DATETIME",
         "cache_quota_mb": "ALTER TABLE project ADD COLUMN cache_quota_mb INTEGER",
         "cache_prune_after_hours": "ALTER TABLE project ADD COLUMN cache_prune_after_hours INTEGER",
+        "allowlist": "ALTER TABLE project ADD COLUMN allowlist JSON",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}
-    if not pending:
-        return
+    if pending:
+        with db_engine.begin() as connection:
+            for ddl in pending.values():
+                connection.execute(text(ddl))
 
-    with db_engine.begin() as connection:
-        for ddl in pending.values():
-            connection.execute(text(ddl))
+    try:
+        with db_engine.begin() as connection:
+            connection.execute(text("UPDATE project SET allowlist = '[]' WHERE allowlist IS NULL"))
+    except Exception as exc:  # noqa: BLE001 - do not fail init on backfill issues
+        logger.warning("Failed to backfill project allowlist defaults: %s", exc)
 
 
 def _drop_legacy_project_local_path(
@@ -129,6 +134,8 @@ def _ensure_task_columns(db_engine) -> None:
         "codex_reasoning_effort": "ALTER TABLE task ADD COLUMN codex_reasoning_effort VARCHAR",
         "abort_requested": "ALTER TABLE task ADD COLUMN abort_requested BOOLEAN NOT NULL DEFAULT 0",
         "cache_commit": "ALTER TABLE task ADD COLUMN cache_commit VARCHAR",
+        "mr_title": "ALTER TABLE task ADD COLUMN mr_title VARCHAR",
+        "target_branch": "ALTER TABLE task ADD COLUMN target_branch VARCHAR",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}

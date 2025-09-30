@@ -19,6 +19,7 @@ class ProjectCreate(ProjectBase):
     codex_token: Optional[str] = None
     cache_quota_mb: Optional[int] = None
     cache_prune_after_hours: Optional[int] = None
+    allowlist: List[str] = Field(default_factory=list)
 
 
 class ProjectRead(ProjectBase):
@@ -30,6 +31,7 @@ class ProjectRead(ProjectBase):
     last_task_at: Optional[datetime] = None
     last_task_status: Optional[TaskStatus] = None
     allowlist_status: str = "unknown"
+    allowlist: List[str] = Field(default_factory=list)
     active_task_count: int = 0
     total_task_count: int = 0
     cache_path: str
@@ -49,6 +51,7 @@ class ProjectUpdate(SQLModel):
     actor: Optional[str] = None
     cache_quota_mb: Optional[int] = None
     cache_prune_after_hours: Optional[int] = None
+    allowlist: Optional[List[str]] = None
 
 
 class ProjectDeleteRequest(SQLModel):
@@ -60,12 +63,13 @@ class ProjectTaskSummary(SQLModel):
     status: TaskStatus
     prompt: str
     branch: Optional[str]
+    target_branch: Optional[str] = None
+    mr_title: Optional[str] = None
     codex_model: Optional[str]
     codex_reasoning_effort: Optional[str]
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
-    allowlist_size: int
     cache_commit: Optional[str] = None
 
 
@@ -113,10 +117,11 @@ class ChatGPTSessionClearRequest(SQLModel):
 class TaskCreate(SQLModel):
     project_id: int
     prompt: str
-    allowlist: List[str] = Field(default_factory=list)
     branch_name: Optional[str] = None
+    target_branch: Optional[str] = None
     codex_model: Optional[str] = None
     codex_reasoning_effort: Optional[str] = None
+    mr_title: Optional[str] = None
 
 
 class TaskRead(SQLModel):
@@ -124,11 +129,12 @@ class TaskRead(SQLModel):
     project_id: int
     prompt: str
     status: TaskStatus
-    allowlist: List[str]
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
     branch: Optional[str]
+    target_branch: Optional[str]
+    mr_title: Optional[str]
     mr_url: Optional[str]
     workspace_path: Optional[str]
     codex_agent_version: Optional[str]
@@ -161,6 +167,7 @@ class TaskLogSnapshot(SQLModel):
     entries: List[str]
     status: TaskStatus
     branch: Optional[str]
+    target_branch: Optional[str]
     codex_model: Optional[str]
     codex_reasoning_effort: Optional[str]
     abort_requested: bool
@@ -171,3 +178,13 @@ class CodexModelSummary(SQLModel):
     label: str
     description: Optional[str] = None
     is_default: bool = False
+
+
+class GitLabBranchSummary(SQLModel):
+    name: str
+    default: bool = False
+
+
+class GitLabBranchList(SQLModel):
+    items: List[GitLabBranchSummary] = Field(default_factory=list)
+    next_page: Optional[int] = None

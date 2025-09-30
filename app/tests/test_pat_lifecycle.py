@@ -109,7 +109,6 @@ class PatLifecycleTests(unittest.TestCase):
                     project_id=project_id,
                     prompt="pending task",
                     status=TaskStatus.pending,
-                    allowlist=[],
                     created_at=datetime.now(timezone.utc),
                 )
                 session.add(pending_task)

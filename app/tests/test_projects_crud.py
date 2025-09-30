@@ -67,13 +67,18 @@ class ProjectCrudTests(unittest.TestCase):
             self._register_pat(client)
             project_id = self._create_project(client)
 
+            update_allowlist = client.patch(
+                f"/projects/{project_id}",
+                json={"allowlist": ["pypi.org"]},
+            )
+            self.assertEqual(update_allowlist.status_code, 200, update_allowlist.text)
+
             with patch("app.app.worker.TaskQueueManager.enqueue", lambda self, task_id: None):
                 first_task = client.post(
                     "/tasks",
                     json={
                         "project_id": project_id,
                         "prompt": "seed task",
-                        "allowlist": [],
                     },
                 )
                 self.assertEqual(first_task.status_code, 201, first_task.text)
@@ -83,7 +88,6 @@ class ProjectCrudTests(unittest.TestCase):
                     json={
                         "project_id": project_id,
                         "prompt": "custom allowlist",
-                        "allowlist": ["src/"],
                         "codex_model": "gpt-5-codex",
                         "codex_reasoning_effort": "low",
                     },
@@ -119,12 +123,12 @@ class ProjectCrudTests(unittest.TestCase):
             self.assertEqual(payload["active_task_count"], 0)
             self.assertEqual(payload["last_task_status"], "failed")
             self.assertEqual(payload["allowlist_status"], "custom")
+            self.assertEqual(payload["allowlist"], ["pypi.org"])
             self.assertIsNotNone(payload["last_task_at"])
             self.assertEqual(len(payload["recent_tasks"]), 2)
             latest_task = payload["recent_tasks"][0]
             self.assertEqual(latest_task["codex_model"], "gpt-5-codex")
             self.assertEqual(latest_task["codex_reasoning_effort"], "low")
-            self.assertEqual(latest_task["allowlist_size"], 1)
 
     def test_update_project_supports_field_changes_and_token_management(self) -> None:
         with TestClient(self.main.app) as client:
@@ -170,7 +174,7 @@ class ProjectCrudTests(unittest.TestCase):
             with patch("app.app.worker.TaskQueueManager.enqueue", lambda self, task_id: None):
                 task_response = client.post(
                     "/tasks",
-                    json={"project_id": project_id, "prompt": "pending", "allowlist": []},
+                    json={"project_id": project_id, "prompt": "pending"},
                 )
             self.assertEqual(task_response.status_code, 201, task_response.text)
             task_id = task_response.json()["id"]

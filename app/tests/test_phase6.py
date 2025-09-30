@@ -87,19 +87,20 @@ class Phase6AllowlistTests(unittest.TestCase):
                     "default_branch": "main",
                     "gitlab_host": "https://gitlab.example.com",
                     "gitlab_project_path": "example/demo",
+                    "allowlist": [" HTTPS://Example.org/path ", "registry.NPMJS.org"],
                 },
             )
             self.assertEqual(project_resp.status_code, 201)
             project_data = project_resp.json()
             self.assertEqual(project_data["cache_path"], str(project_root))
             self.assertEqual(project_data["cache_status"], "ready")
+            project_id = project_data["id"]
 
             task_resp = client.post(
                 "/tasks",
                 json={
-                    "project_id": project_data["id"],
+                    "project_id": project_id,
                     "prompt": "Test allowlist",
-                    "allowlist": [" HTTPS://Example.org/path ", "registry.NPMJS.org"],
                 },
             )
             self.assertEqual(task_resp.status_code, 201)
@@ -117,10 +118,10 @@ class Phase6AllowlistTests(unittest.TestCase):
 
             self.assertIsNotNone(final_payload)
             self.assertEqual(final_payload["status"], "done")
-            self.assertEqual(
-                final_payload["allowlist"],
-                ["example.org", "registry.npmjs.org"],
-            )
+            project_detail = client.get(f"/projects/{project_id}")
+            self.assertEqual(project_detail.status_code, 200)
+            detail_payload = project_detail.json()
+            self.assertEqual(detail_payload["allowlist"], ["example.org", "registry.npmjs.org"])
 
             snapshot_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(snapshot_resp.status_code, 200)

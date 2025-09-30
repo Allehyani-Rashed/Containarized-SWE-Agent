@@ -33,6 +33,10 @@ class Project(SQLModel, table=True):
     codex_token_updated_at: Optional[datetime] = Field(default=None, nullable=True)
     cache_quota_mb: Optional[int] = Field(default=None, nullable=True)
     cache_prune_after_hours: Optional[int] = Field(default=None, nullable=True)
+    allowlist: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSON, nullable=False, default=list),
+    )
 
 
 class IntegrationCredential(SQLModel, table=True):
@@ -60,14 +64,12 @@ class Task(SQLModel, table=True):
     project_id: int = Field(foreign_key="project.id", nullable=False, index=True)
     prompt: str
     status: TaskStatus = Field(default=TaskStatus.pending, nullable=False)
-    allowlist: list[str] = Field(
-        default_factory=list,
-        sa_column=Column(JSON, nullable=False, default=list),
-    )
     created_at: datetime = Field(default_factory=_utc_now, nullable=False)
     started_at: Optional[datetime] = Field(default=None, nullable=True)
     finished_at: Optional[datetime] = Field(default=None, nullable=True)
     branch: Optional[str] = Field(default=None, nullable=True)
+    target_branch: Optional[str] = Field(default=None, nullable=True)
+    mr_title: Optional[str] = Field(default=None, nullable=True)
     mr_url: Optional[str] = Field(default=None, nullable=True)
     workspace_path: Optional[str] = Field(default=None, nullable=True)
     codex_agent_version: Optional[str] = Field(default=None, nullable=True)

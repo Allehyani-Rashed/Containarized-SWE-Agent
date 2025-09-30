@@ -61,6 +61,7 @@ class Phase1FlowTests(unittest.TestCase):
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/demo",
+                "allowlist": ["gitlab.example.com"],
             }
             project_resp = client.post("/projects", json=project_payload)
             self.assertEqual(project_resp.status_code, 201)
@@ -79,7 +80,6 @@ class Phase1FlowTests(unittest.TestCase):
                 json={
                     "project_id": project_data["id"],
                     "prompt": "Simulate a codex task",
-                    "allowlist": ["gitlab.example.com"],
                 },
             )
             self.assertEqual(task_resp.status_code, 201)

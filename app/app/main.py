@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
@@ -31,6 +36,7 @@ from .integrations import (
     GitLabPATVerificationError,
     clear_chatgpt_session_bundle,
     clear_gitlab_pat_token,
+    get_gitlab_pat_token,
     get_gitlab_pat_status,
     set_chatgpt_session_bundle,
     set_gitlab_pat_token,
@@ -44,6 +50,8 @@ from .schemas import (
     GitLabPATRotateRequest,
     GitLabPATStatus,
     GitLabPATVerifyRequest,
+    GitLabBranchList,
+    GitLabBranchSummary,
     ProjectCreate,
     ProjectDeleteRequest,
     ProjectDetail,
@@ -57,7 +65,7 @@ from .schemas import (
     TaskListResponse,
     TaskRead,
 )
-from .secrets import get_secret_manager
+from .secrets import SecretError, get_secret_manager
 from .worker import TaskQueueManager
 
 _worker: TaskQueueManager | None = None
@@ -193,11 +201,46 @@ def _derive_last_activity(task: Task | None) -> datetime | None:
     return None
 
 
-def _derive_allowlist_status(task: Task | None) -> str:
-    if task is None:
-        return "unknown"
-    allowlist = task.allowlist or []
-    return "custom" if allowlist else "empty"
+def _derive_allowlist_status(project: Project) -> str:
+    entries = project.allowlist or []
+    if entries:
+        return "custom"
+    return "empty"
+
+
+def _clean_gitlab_error(message: str, *, max_length: int = 240) -> str:
+    clean = " ".join(str(message).split())
+    if len(clean) <= max_length:
+        return clean
+    return f"{clean[: max_length - 1]}…"
+
+
+def _resolve_project_gitlab_token(session: Session, project: Project) -> str | None:
+    project_token = (project.gitlab_token or "").strip()
+    if project_token:
+        return project_token
+    try:
+        token = get_gitlab_pat_token(session)
+    except SecretError as exc:  # noqa: BLE001 - surface credential failures upstream
+        logger.warning("Failed to decrypt GitLab PAT while listing branches: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to decrypt stored GitLab PAT; reconfigure the credential",
+        ) from exc
+    if not token:
+        return None
+    candidate = token.strip()
+    return candidate or None
+
+
+def _build_gitlab_branches_url(project: Project, *, page: int, per_page: int, search: str | None) -> str:
+    encoded_path = quote(project.gitlab_project_path.strip("/"), safe="")
+    base = f"{project.gitlab_host.rstrip('/')}/api/v4/projects/{encoded_path}/repository/branches"
+    params: Dict[str, str] = {"page": str(page), "per_page": str(per_page)}
+    if search:
+        params["search"] = search
+    query = urlencode(params)
+    return f"{base}?{query}"
 
 
 def _collect_project_metrics(
@@ -212,7 +255,7 @@ def _collect_project_metrics(
         metrics[project.id] = {
             "last_task_at": None,
             "last_task_status": None,
-            "allowlist_status": "unknown",
+            "allowlist_status": _derive_allowlist_status(project),
             "active_task_count": 0,
             "total_task_count": 0,
             "last_cache_commit": None,
@@ -262,7 +305,6 @@ def _collect_project_metrics(
         data["last_task_at"] = _derive_last_activity(task)
         data["last_task_status"] = task.status
         data["last_cache_commit"] = task.cache_commit
-        data["allowlist_status"] = _derive_allowlist_status(task)
         if len(seen) == len(project_ids):
             break
 
@@ -361,6 +403,23 @@ def _normalize_codex_reasoning_effort(value: str | None) -> str:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid Codex reasoning effort; expected one of: {allowed}",
+        )
+    return candidate
+
+
+def _normalize_mr_title_input(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = " ".join((value or "").split())
+    if not candidate:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Merge request title cannot be empty",
+        )
+    if len(candidate) > 240:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Merge request title cannot exceed 240 characters",
         )
     return candidate
 
@@ -518,6 +577,7 @@ def create_project(
 ) -> ProjectRead:
     data = payload.model_dump()
     raw_codex_token = (data.pop("codex_token", None) or "").strip()
+    allowlist_entries = data.pop("allowlist", [])
 
     name = _normalize_non_empty(data.get("name"), field="Project name")
     default_branch = _normalize_branch_name(data.get("default_branch") or "")
@@ -547,6 +607,7 @@ def create_project(
         gitlab_project_path=gitlab_project_path,
         cache_quota_mb=data.get("cache_quota_mb"),
         cache_prune_after_hours=data.get("cache_prune_after_hours"),
+        allowlist=normalize_user_allowlist(allowlist_entries or []),
     )
     if raw_codex_token:
         manager = get_secret_manager()
@@ -590,12 +651,13 @@ def get_project_detail(project_id: int, session: Session = Depends(get_session))
             status=task.status,
             prompt=task.prompt,
             branch=task.branch,
+            target_branch=task.target_branch,
+            mr_title=task.mr_title,
             codex_model=task.codex_model or _normalize_codex_model(None),
             codex_reasoning_effort=(task.codex_reasoning_effort or default_reasoning_effort()),
             created_at=task.created_at,
             started_at=task.started_at,
             finished_at=task.finished_at,
-            allowlist_size=len(task.allowlist or []),
             cache_commit=task.cache_commit,
         )
         for task in recent_rows
@@ -605,6 +667,87 @@ def get_project_detail(project_id: int, session: Session = Depends(get_session))
     payload = summary.model_dump()
     payload["recent_tasks"] = recent_tasks
     return ProjectDetail(**payload)
+
+
+@app.get("/projects/{project_id}/branches", response_model=GitLabBranchList)
+def list_project_branches(
+    project_id: int,
+    session: Session = Depends(get_session),
+    search: str | None = Query(None, max_length=200),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+) -> GitLabBranchList:
+    project = session.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    token = _resolve_project_gitlab_token(session, project)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Configure a GitLab PAT to list branches",
+        )
+
+    url = _build_gitlab_branches_url(project, page=page, per_page=per_page, search=search)
+    request = Request(url, method="GET")
+    request.add_header("PRIVATE-TOKEN", token)
+    request.add_header("Accept", "application/json")
+    request.add_header("User-Agent", "codex-local-agent/branch-list")
+
+    try:
+        with urlopen(request, timeout=10) as response:
+            status_code = response.getcode()
+            if not (200 <= status_code < 300):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=_clean_gitlab_error(f"GitLab responded with status {status_code}"),
+                )
+
+            payload = response.read()
+            try:
+                data = json.loads(payload)
+            except JSONDecodeError as exc:  # noqa: BLE001 - normalize upstream error
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="GitLab returned an unexpected response",
+                ) from exc
+
+            if not isinstance(data, list):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="GitLab returned an unexpected response",
+                )
+
+            branches: List[GitLabBranchSummary] = []
+            for entry in data:
+                name = entry.get("name") if isinstance(entry, dict) else None
+                if not name:
+                    continue
+                branches.append(GitLabBranchSummary(name=name, default=bool(entry.get("default", False))))
+
+            next_page_header = response.headers.get("X-Next-Page") if response.headers else None
+            next_page = None
+            if next_page_header:
+                trimmed = str(next_page_header).strip()
+                if trimmed:
+                    try:
+                        next_page = int(trimmed)
+                    except ValueError:
+                        next_page = None
+
+            return GitLabBranchList(items=branches, next_page=next_page)
+    except HTTPException:
+        raise
+    except HTTPError as exc:  # pragma: no cover - exercised via URLError in tests
+        detail = _clean_gitlab_error(f"GitLab responded with status {exc.code}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail) from exc
+    except URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        detail = _clean_gitlab_error(f"Unable to reach GitLab: {reason}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail) from exc
+    except Exception as exc:  # noqa: BLE001 - surface unexpected runtime issues
+        detail = _clean_gitlab_error(f"Unexpected error: {exc}")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=detail) from exc
 
 
 @app.patch("/projects/{project_id}", response_model=ProjectRead)
@@ -663,6 +806,13 @@ def update_project(
         if getattr(project, field) != value:
             setattr(project, field, value)
             updated_fields.append(field)
+
+    if "allowlist" in payload_data:
+        allowlist_entries = payload_data["allowlist"] or []
+        normalized_entries = normalize_user_allowlist(allowlist_entries)
+        if project.allowlist != normalized_entries:
+            project.allowlist = normalized_entries
+            updated_fields.append("allowlist")
 
     manager = get_secret_manager()
     codex_token_state = None
@@ -768,17 +918,28 @@ def create_task(
             detail="GitLab PAT not configured; rotate a token via /integrations/pat",
         )
 
-    normalized_allowlist = normalize_user_allowlist(payload.allowlist or [])
     branch_override = _normalize_branch_name(payload.branch_name) if payload.branch_name else None
+    target_branch_override = (
+        _normalize_branch_name(payload.target_branch) if payload.target_branch else None
+    )
     codex_model = _normalize_codex_model(payload.codex_model)
     reasoning_effort = _normalize_codex_reasoning_effort(payload.codex_reasoning_effort)
+    mr_title = _normalize_mr_title_input(payload.mr_title)
+
+    target_branch = target_branch_override or project.default_branch
+    if not target_branch:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Project default branch missing; set one before submitting tasks",
+        )
 
     task = Task(
         project_id=payload.project_id,
         prompt=payload.prompt,
-        allowlist=normalized_allowlist,
         status=TaskStatus.pending,
         branch=branch_override,
+        target_branch=target_branch,
+        mr_title=mr_title,
         codex_model=codex_model,
         codex_reasoning_effort=reasoning_effort,
     )
@@ -932,6 +1093,7 @@ async def get_task_logs(
             entries=entries,
             status=task.status,
             branch=task.branch,
+            target_branch=task.target_branch,
             codex_model=task.codex_model,
             codex_reasoning_effort=task.codex_reasoning_effort or default_reasoning_effort(),
             abort_requested=bool(task.abort_requested),
