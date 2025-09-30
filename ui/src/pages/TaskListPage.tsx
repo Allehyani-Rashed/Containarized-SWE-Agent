@@ -52,6 +52,7 @@ function TaskListPage() {
     {
       status: TaskStatus;
       branch: string | null;
+      target_branch: string | null;
       codex_model: string | null;
       codex_reasoning_effort: string | null;
       abort_requested: boolean;
@@ -265,6 +266,7 @@ function TaskListPage() {
         setLogSnapshotMeta({
           status: snapshot.status,
           branch: snapshot.branch ?? null,
+          target_branch: snapshot.target_branch ?? null,
           codex_model: snapshot.codex_model ?? null,
           codex_reasoning_effort: snapshot.codex_reasoning_effort ?? 'medium',
           abort_requested: snapshot.abort_requested,
@@ -417,6 +419,7 @@ function TaskListPage() {
     setLogSnapshotMeta({
       status: taskDetail.status,
       branch: taskDetail.branch ?? null,
+      target_branch: taskDetail.target_branch ?? null,
       codex_model: taskDetail.codex_model ?? null,
       codex_reasoning_effort: taskDetail.codex_reasoning_effort ?? 'medium',
       abort_requested: taskDetail.abort_requested,
@@ -519,6 +522,7 @@ function TaskListPage() {
     setLogSnapshotMeta({
       status: task.status,
       branch: task.branch ?? null,
+      target_branch: task.target_branch ?? null,
       codex_model: task.codex_model ?? null,
       codex_reasoning_effort: task.codex_reasoning_effort ?? 'medium',
       abort_requested: task.abort_requested,
@@ -737,17 +741,18 @@ function TaskListPage() {
                   <th>Status</th>
                   <th>Created</th>
                   <th>Finished</th>
-                  <th>Codex</th>
+                  <th>Agent Invocation</th>
                   <th>Model</th>
                   <th>Reasoning</th>
                   <th>Branch</th>
+                  <th>Base Branch</th>
                   <th>Merge Request</th>
                 </tr>
               </thead>
               <tbody>
                 {Array.from({ length: skeletonRowCount }).map((_, rowIndex) => (
                   <tr key={`skeleton-${rowIndex}`}>
-                    {Array.from({ length: 10 }).map((__, cellIndex) => (
+                    {Array.from({ length: 11 }).map((__, cellIndex) => (
                       <td key={cellIndex}>
                         <span
                           className="skeleton skeleton-text"
@@ -773,15 +778,16 @@ function TaskListPage() {
                     <th>Status</th>
                     <th>Created</th>
                     <th>Finished</th>
-                    <th>Codex</th>
-                    <th>Model</th>
-                    <th>Reasoning</th>
-                    <th>Branch</th>
-                    <th>Merge Request</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((task) => {
+                  <th>Agent Invocation</th>
+                  <th>Model</th>
+                  <th>Reasoning</th>
+                  <th>Branch</th>
+                  <th>Base Branch</th>
+                  <th>Merge Request</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((task) => {
                     const projectName = projectMap.get(task.project_id)?.name ?? String(task.project_id);
                     return (
                       <tr
@@ -800,6 +806,7 @@ function TaskListPage() {
                         <td>{task.codex_model ?? '--'}</td>
                         <td>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
                         <td>{task.branch ?? '--'}</td>
+                        <td>{task.target_branch ?? '--'}</td>
                         <td>
                           {task.mr_url ? (
                             <a href={task.mr_url} target="_blank" rel="noreferrer">
@@ -933,15 +940,15 @@ function TaskListPage() {
                       <dd>{taskDetail.prompt}</dd>
                     </div>
                     <div>
-                      <dt>Allowlist</dt>
-                      <dd>{taskDetail.allowlist.length ? taskDetail.allowlist.join(', ') : '--'}</dd>
-                    </div>
-                    <div>
                       <dt>Branch</dt>
                       <dd>{taskDetail.branch ?? '--'}</dd>
                     </div>
                     <div>
-                      <dt>Codex Model</dt>
+                      <dt>Base Branch</dt>
+                      <dd>{taskDetail.target_branch ?? '--'}</dd>
+                    </div>
+                    <div>
+                      <dt>Agent Model</dt>
                       <dd>{taskDetail.codex_model ?? '--'}</dd>
                     </div>
                     <div>
@@ -971,11 +978,11 @@ function TaskListPage() {
                       </dd>
                     </div>
                     <div>
-                      <dt>Codex Agent</dt>
+                      <dt>Agent Runtime</dt>
                       <dd>{taskDetail.codex_agent_version ?? '--'}</dd>
                     </div>
                     <div>
-                      <dt>Invocation</dt>
+                      <dt>Agent Invocation</dt>
                       <dd>{taskDetail.codex_invocation ?? '--'}</dd>
                     </div>
                   </dl>
@@ -1024,6 +1031,10 @@ function TaskListPage() {
                       <div>
                         <dt>Branch at capture</dt>
                         <dd>{logSnapshotMeta.branch ?? '--'}</dd>
+                      </div>
+                      <div>
+                        <dt>Base branch at capture</dt>
+                        <dd>{logSnapshotMeta.target_branch ?? '--'}</dd>
                       </div>
                       <div>
                         <dt>Model at capture</dt>

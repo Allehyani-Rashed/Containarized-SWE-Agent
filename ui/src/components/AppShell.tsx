@@ -11,8 +11,8 @@ function AppShell() {
   return (
     <div className="app-shell">
       <header className="hero">
-        <h1>Containerized Codex Agent</h1>
-        <p>Register projects, submit Codex tasks, and monitor results locally.</p>
+        <h1>Containerized Agent Runner</h1>
+        <p>Register projects, submit agent tasks, and monitor results locally.</p>
       </header>
 
       <div className="app-layout">

@@ -94,7 +94,7 @@ function ProjectDetailPage() {
     <div className="page">
       <header className="page-header">
         <h2>Project Detail</h2>
-        <p>Review configuration, credential status, and recent Codex activity.</p>
+        <p>Review configuration, credential status, and recent agent activity.</p>
       </header>
 
       <button type="button" className="ghost-button" onClick={() => navigate('/projects')}>
@@ -171,6 +171,10 @@ function ProjectDetailPage() {
               <dd>{allowlistLabels[summary.allowlist_status]}</dd>
             </div>
             <div>
+              <dt>Allowlist Domains</dt>
+              <dd>{summary.allowlist.length ? summary.allowlist.join(', ') : 'None configured'}</dd>
+            </div>
+            <div>
               <dt>Total Tasks</dt>
               <dd>{summary.total_task_count}</dd>
             </div>
@@ -210,7 +214,7 @@ function ProjectDetailPage() {
           <h3>Credential Status</h3>
           <div className="summary-list">
             <div>
-              <dt>Project Codex Token</dt>
+              <dt>Project Agent Token</dt>
               <dd>
                 {detail.codex_token_configured ? (
                   <span className="status status-done">Configured</span>
@@ -268,10 +272,10 @@ function ProjectDetailPage() {
                     <th>ID</th>
                     <th>Status</th>
                     <th>Branch</th>
+                    <th>Base Branch</th>
                     <th>Model</th>
                     <th>Reasoning</th>
                     <th>Cache Commit</th>
-                    <th>Allowlist Entries</th>
                     <th>Created</th>
                     <th>Finished</th>
                   </tr>
@@ -284,10 +288,10 @@ function ProjectDetailPage() {
                         <span className={`status status-${task.status}`}>{task.status}</span>
                       </td>
                       <td>{task.branch ?? 'Auto-generated'}</td>
+                      <td>{task.target_branch ?? 'Default'}</td>
                       <td>{task.codex_model ?? 'Default'}</td>
                       <td>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
                       <td>{task.cache_commit ? task.cache_commit.slice(0, 12) : '—'}</td>
-                      <td>{task.allowlist_size}</td>
                       <td>{formatTimestamp(task.created_at)}</td>
                       <td>{formatTimestamp(task.finished_at)}</td>
                     </tr>

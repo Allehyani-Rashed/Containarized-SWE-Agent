@@ -13,6 +13,7 @@ export type Project = {
   last_task_at: string | null;
   last_task_status: TaskStatus | null;
   allowlist_status: ProjectAllowlistStatus;
+  allowlist: string[];
   active_task_count: number;
   total_task_count: number;
   cache_path: string;
@@ -29,12 +30,13 @@ export type ProjectTaskSummary = {
   status: TaskStatus;
   prompt: string;
   branch: string | null;
+  target_branch: string | null;
+  mr_title: string | null;
   codex_model: string | null;
   codex_reasoning_effort: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
-  allowlist_size: number;
   cache_commit: string | null;
 };
 
@@ -63,11 +65,12 @@ export type Task = {
   project_id: number;
   prompt: string;
   status: TaskStatus;
-  allowlist: string[];
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
   branch: string | null;
+  target_branch: string | null;
+  mr_title: string | null;
   mr_url: string | null;
   workspace_path: string | null;
   codex_agent_version: string | null;
@@ -91,6 +94,7 @@ export type TaskLogsSnapshot = {
   entries: string[];
   status: TaskStatus;
   branch: string | null;
+  target_branch: string | null;
   codex_model: string | null;
   codex_reasoning_effort: string | null;
   abort_requested: boolean;
@@ -104,6 +108,7 @@ export type ProjectCreatePayload = {
   codex_token: string | null;
   cache_quota_mb?: number | null;
   cache_prune_after_hours?: number | null;
+  allowlist: string[];
 };
 
 export type ProjectUpdatePayload = Partial<{
@@ -116,6 +121,7 @@ export type ProjectUpdatePayload = Partial<{
   cache_quota_mb: number | null;
   cache_prune_after_hours: number | null;
   actor: string | null;
+  allowlist: string[];
 }>;
 
 export type ProjectDeletePayload = {
@@ -125,10 +131,11 @@ export type ProjectDeletePayload = {
 export type TaskCreatePayload = {
   project_id: number;
   prompt: string;
-  allowlist: string[];
   branch_name?: string;
+  target_branch?: string;
   codex_model?: string;
   codex_reasoning_effort?: string;
+  mr_title?: string;
 };
 
 export type PatStorePayload = {
@@ -158,4 +165,14 @@ export type CodexModel = {
   label: string;
   description?: string | null;
   is_default: boolean;
+};
+
+export type ProjectBranch = {
+  name: string;
+  default: boolean;
+};
+
+export type ProjectBranchList = {
+  items: ProjectBranch[];
+  next_page: number | null;
 };

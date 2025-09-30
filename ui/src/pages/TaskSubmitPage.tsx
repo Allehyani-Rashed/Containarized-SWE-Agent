@@ -11,10 +11,11 @@ import { usePatStatus } from '../hooks/usePatStatus';
 const initialFormState: TaskSubmissionFormState = {
   projectId: '',
   prompt: '',
-  allowlist: '',
+  targetBranch: '',
   branchName: '',
   codexModel: '',
   codexReasoningEffort: 'medium',
+  mrTitle: '',
 };
 
 function TaskSubmitPage() {
@@ -42,7 +43,11 @@ function TaskSubmitPage() {
 
   useEffect(() => {
     if (!form.projectId && projects.length) {
-      setForm((prev) => ({ ...prev, projectId: String(projects[0].id) }));
+      setForm((prev) => ({
+        ...prev,
+        projectId: String(projects[0].id),
+        targetBranch: projects[0].default_branch,
+      }));
     }
   }, [projects, form.projectId]);
 
@@ -53,10 +58,27 @@ function TaskSubmitPage() {
     }
     const exists = projects.some((project) => project.id === state.projectId);
     if (exists) {
-      setForm((prev) => ({ ...prev, projectId: String(state.projectId) }));
+      const target = projects.find((project) => project.id === state.projectId);
+      setForm((prev) => ({
+        ...prev,
+        projectId: String(state.projectId),
+        targetBranch: target?.default_branch ?? prev.targetBranch,
+      }));
       navigate('.', { replace: true, state: {} });
     }
   }, [location.state, navigate, projects]);
+
+  useEffect(() => {
+    if (!selectedProject) {
+      return;
+    }
+    setForm((prev) => {
+      if (!prev.targetBranch.trim()) {
+        return { ...prev, targetBranch: selectedProject.default_branch };
+      }
+      return prev;
+    });
+  }, [selectedProject]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +117,15 @@ function TaskSubmitPage() {
       setError('Project and prompt are required');
       return;
     }
+    const normalizedMrTitle = form.mrTitle.replace(/\s+/g, ' ').trim();
+    if (!normalizedMrTitle) {
+      setError('Merge request title is required');
+      return;
+    }
+    if (normalizedMrTitle.length > 240) {
+      setError('Merge request title cannot exceed 240 characters');
+      return;
+    }
     if (!patStatus.configured) {
       setError('Configure a GitLab PAT before submitting tasks');
       return;
@@ -103,12 +134,12 @@ function TaskSubmitPage() {
     const payload: TaskCreatePayload = {
       project_id: Number(form.projectId),
       prompt: form.prompt,
-      allowlist: form.allowlist
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
+      mr_title: normalizedMrTitle,
     };
 
+    if (form.targetBranch.trim()) {
+      payload.target_branch = form.targetBranch.trim();
+    }
     if (form.branchName.trim()) {
       payload.branch_name = form.branchName.trim();
     }
@@ -130,7 +161,7 @@ function TaskSubmitPage() {
       const task = await createTask(payload);
       setCreatedTaskId(task.id);
       setSuccessMessage(`Task ${task.id} created. View progress on the Tasks page.`);
-      setForm((prev) => ({ ...prev, prompt: '' }));
+      setForm((prev) => ({ ...prev, prompt: '', mrTitle: '' }));
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : 'Failed to submit task');
     } finally {
@@ -144,7 +175,7 @@ function TaskSubmitPage() {
     <div className="page">
       <header className="page-header">
         <h2>Submit Task</h2>
-        <p>Pick a project, provide the prompt, and submit a new Codex task.</p>
+        <p>Pick a project, provide the prompt, and submit a new agent task.</p>
       </header>
 
       {bannerMessage && <div className="error-banner">{bannerMessage}</div>}

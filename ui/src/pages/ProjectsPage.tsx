@@ -27,6 +27,7 @@ type ProjectFormState = {
   codex_token: string;
   cache_quota_mb: string;
   cache_prune_after_hours: string;
+  allowlist: string;
 };
 
 type FormErrors = Partial<Record<keyof ProjectFormState, string>>;
@@ -47,6 +48,7 @@ const initialFormState: ProjectFormState = {
   codex_token: '',
   cache_quota_mb: '',
   cache_prune_after_hours: '',
+  allowlist: '',
 };
 
 const allowlistOrder: Record<ProjectAllowlistStatus, number> = {
@@ -63,6 +65,13 @@ function normalizeHost(value: string): string {
 function normalizeProjectPath(value: string): string {
   const trimmed = value.trim();
   return trimmed.replace(/^\/+/, '');
+}
+
+function parseAllowlist(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 function validateField(field: keyof ProjectFormState, value: string): string | null {
@@ -123,6 +132,8 @@ function validateField(field: keyof ProjectFormState, value: string): string | n
       if (!/^\d+$/.test(trimmed)) {
         return 'Prune interval must be a non-negative integer (hours)';
       }
+      return null;
+    case 'allowlist':
       return null;
     default:
       return null;
@@ -292,6 +303,7 @@ function ProjectsPage() {
       gitlab_host: normalizeHost(createForm.gitlab_host),
       gitlab_project_path: normalizeProjectPath(createForm.gitlab_project_path),
       codex_token: createForm.codex_token.trim() ? createForm.codex_token.trim() : null,
+      allowlist: parseAllowlist(createForm.allowlist),
     };
 
     const cacheQuota = createForm.cache_quota_mb.trim();
@@ -339,6 +351,7 @@ function ProjectsPage() {
       default_branch: editForm.default_branch.trim(),
       gitlab_host: normalizeHost(editForm.gitlab_host),
       gitlab_project_path: normalizeProjectPath(editForm.gitlab_project_path),
+      allowlist: parseAllowlist(editForm.allowlist),
     };
 
     const quotaValue = editForm.cache_quota_mb.trim();
@@ -389,6 +402,7 @@ function ProjectsPage() {
       cache_quota_mb: project.cache_quota_mb == null ? '' : String(project.cache_quota_mb),
       cache_prune_after_hours:
         project.cache_prune_after_hours == null ? '' : String(project.cache_prune_after_hours),
+      allowlist: project.allowlist.length ? project.allowlist.join('\n') : '',
     });
     setEditErrors({});
     setClearCodexToken(false);
@@ -626,7 +640,17 @@ function ProjectsPage() {
             ) : null}
           </label>
           <label>
-            Codex API Token (optional)
+            Project Allowlist (optional)
+            <textarea
+              value={createForm.allowlist}
+              onChange={(event) => handleCreateChange('allowlist', event.target.value)}
+              placeholder={'.example.com\nregistry.npmjs.org'}
+              rows={3}
+            />
+            <p className="field-hint">Enter one domain per line (commas also supported). Leave blank to use only the default deny list.</p>
+          </label>
+          <label>
+            Agent API Token (optional)
             <input
               type="password"
               value={createForm.codex_token}
@@ -832,7 +856,17 @@ function ProjectsPage() {
           ) : null}
         </label>
         <label>
-          Update Codex API Token (optional)
+          Project Allowlist (optional)
+          <textarea
+            value={editForm.allowlist}
+            onChange={(event) => handleEditChange('allowlist', event.target.value)}
+            placeholder={'.example.com\nregistry.npmjs.org'}
+            rows={3}
+          />
+          <p className="field-hint">One domain per line or separated with commas. Leave blank to rely on defaults.</p>
+        </label>
+        <label>
+          Update Agent API Token (optional)
           <input
             type="password"
             value={editForm.codex_token}
@@ -848,7 +882,7 @@ function ProjectsPage() {
               onChange={(event) => setClearCodexToken(event.target.checked)}
               disabled={Boolean(editForm.codex_token.trim())}
             />
-            <span>Clear stored Codex token for this project</span>
+            <span>Clear stored agent token for this project</span>
           </label>
         ) : null}
         <div className="field-grid">

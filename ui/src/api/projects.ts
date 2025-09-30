@@ -1,5 +1,6 @@
 import {
   Project,
+  ProjectBranchList,
   ProjectCreatePayload,
   ProjectDeletePayload,
   ProjectDetail,
@@ -37,4 +38,27 @@ export function deleteProject(projectId: number, payload?: ProjectDeletePayload)
     headers: payload ? { 'Content-Type': 'application/json' } : undefined,
     body: payload ? JSON.stringify(payload) : undefined,
   });
+}
+
+type BranchListParams = {
+  search?: string;
+  page?: number;
+  perPage?: number;
+  signal?: AbortSignal;
+};
+
+export function listProjectBranches(projectId: number, params: BranchListParams = {}): Promise<ProjectBranchList> {
+  const searchParams = new URLSearchParams();
+  if (params.search) {
+    searchParams.set('search', params.search);
+  }
+  if (params.page) {
+    searchParams.set('page', String(params.page));
+  }
+  if (params.perPage) {
+    searchParams.set('per_page', String(params.perPage));
+  }
+  const query = searchParams.toString();
+  const url = `/projects/${projectId}/branches${query ? `?${query}` : ''}`;
+  return request<ProjectBranchList>(url, params.signal ? { signal: params.signal } : {});
 }

@@ -63,7 +63,7 @@ function SettingsPage() {
   const activeCredentialLabel = useMemo(() => {
     switch (patStatus.active_credential) {
       case 'api_token':
-        return 'Codex API token';
+        return 'Agent API token';
       case 'session':
         return 'ChatGPT session bundle';
       default:
@@ -248,7 +248,7 @@ function SettingsPage() {
     <div className="page">
       <header className="page-header">
         <h2>Credentials & Integrations</h2>
-        <p>Manage GitLab PATs and Codex session bundles for the runner environment.</p>
+        <p>Manage GitLab PATs and agent session bundles for the runner environment.</p>
       </header>
 
       {combinedError && <div className="error-banner">{combinedError}</div>}
@@ -424,7 +424,7 @@ function SettingsPage() {
           </form>
           <div className="credential-block">
             <p className="pat-hint">
-              Make sure Codex is installed locally and that you are logged in before copying the session bundle.
+              Make sure your agent CLI is installed locally and that you are logged in before copying the session bundle.
             </p>
             <p className="pat-hint">
               macOS copy helper:<br />
@@ -451,7 +451,7 @@ function SettingsPage() {
               Clear Session Bundle
             </button>
             <p className="pat-hint">
-              Session bundles let Docker runs authenticate without a Codex API key. Import fresh bundles after updating your credentials and clear them if they expire or are revoked.
+              Session bundles let Docker runs authenticate without an agent API key. Import fresh bundles after updating your credentials and clear them if they expire or are revoked.
             </p>
           </div>
         </div>
@@ -505,7 +505,7 @@ function SettingsPage() {
           <div className="modal">
             <h3>Clear ChatGPT Session Bundle?</h3>
             <p>
-              Clearing the session bundle forces Docker tasks to rely on a Codex API token. Import a fresh bundle after clearing to continue using session-based authentication.
+              Clearing the session bundle forces Docker tasks to rely on an agent API token. Import a fresh bundle after clearing to continue using session-based authentication.
             </p>
             <label>
               Cleared By (optional)

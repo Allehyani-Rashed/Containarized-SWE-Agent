@@ -1,13 +1,16 @@
-import { Dispatch, FormEventHandler, SetStateAction, useMemo } from 'react';
-import { CodexModel, PatStatus, Project } from '../types';
+import { Dispatch, FormEventHandler, SetStateAction, useEffect, useMemo, useRef, useState } from 'react';
+import { ApiError } from '../api/client';
+import { listProjectBranches } from '../api/projects';
+import { CodexModel, PatStatus, Project, ProjectBranch } from '../types';
 
 export type TaskSubmissionFormState = {
   projectId: string;
   prompt: string;
-  allowlist: string;
+  targetBranch: string;
   branchName: string;
   codexModel: string;
   codexReasoningEffort: 'low' | 'medium' | 'high';
+  mrTitle: string;
 };
 
 type SubmitHandler = FormEventHandler<HTMLFormElement>;
@@ -50,6 +53,71 @@ function TaskSubmissionCard({
   const reasoningHint = reasoningDescriptions[form.codexReasoningEffort];
 
   const modelsAvailable = models.length > 0;
+  const branchListId = useMemo(() => `base-branch-options-${form.projectId || 'unassigned'}`, [form.projectId]);
+  const [branchQuery, setBranchQuery] = useState(form.targetBranch);
+  const [branchOptions, setBranchOptions] = useState<ProjectBranch[]>([]);
+  const [branchLoading, setBranchLoading] = useState(false);
+  const [branchError, setBranchError] = useState<string | null>(null);
+  const branchAbortRef = useRef<AbortController | null>(null);
+  const debouncedBranchQuery = useDebouncedValue(branchQuery, 300);
+
+  useEffect(() => {
+    setBranchQuery(form.targetBranch);
+  }, [form.targetBranch]);
+
+  useEffect(() => {
+    if (!form.projectId) {
+      setBranchOptions([]);
+      setBranchError(null);
+      setBranchLoading(false);
+      if (branchAbortRef.current) {
+        branchAbortRef.current.abort();
+        branchAbortRef.current = null;
+      }
+      return;
+    }
+
+    const controller = new AbortController();
+    branchAbortRef.current?.abort();
+    branchAbortRef.current = controller;
+    setBranchLoading(true);
+
+    listProjectBranches(Number(form.projectId), {
+      search: debouncedBranchQuery.trim() ? debouncedBranchQuery.trim() : undefined,
+      perPage: 20,
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setBranchOptions(response.items);
+        setBranchError(null);
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        if (error instanceof ApiError) {
+          setBranchError(error.message);
+        } else {
+          setBranchError('Failed to load branches');
+        }
+        setBranchOptions([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setBranchLoading(false);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [form.projectId, debouncedBranchQuery]);
 
   return (
     <section className="panel">
@@ -59,7 +127,20 @@ function TaskSubmissionCard({
           Project
           <select
             value={form.projectId}
-            onChange={(event) => setForm((prev) => ({ ...prev, projectId: event.target.value }))}
+            onChange={(event) => {
+              const nextProjectId = event.target.value;
+              let resolvedBranch = '';
+              setForm((prev) => {
+                const selected = projects.find((project) => String(project.id) === nextProjectId);
+                resolvedBranch = selected?.default_branch ?? prev.targetBranch;
+                return {
+                  ...prev,
+                  projectId: nextProjectId,
+                  targetBranch: resolvedBranch,
+                };
+              });
+              setBranchQuery(resolvedBranch);
+            }}
             required
           >
             <option value="" disabled>
@@ -74,24 +155,33 @@ function TaskSubmissionCard({
         </label>
 
         <label>
-          Prompt
-          <textarea
-            value={form.prompt}
-            onChange={(event) => setForm((prev) => ({ ...prev, prompt: event.target.value }))}
-            placeholder="Explain what Codex should do..."
-            rows={4}
-            required
-          />
-        </label>
-
-        <label>
-          Allowlist Domains (optional)
+          Base Branch
           <input
             type="text"
-            value={form.allowlist}
-            onChange={(event) => setForm((prev) => ({ ...prev, allowlist: event.target.value }))}
-            placeholder="domain1.com, domain2.com"
+            list={branchListId}
+            value={form.targetBranch}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setForm((prev) => ({ ...prev, targetBranch: nextValue }));
+              setBranchQuery(nextValue);
+            }}
+            placeholder="main"
+            autoComplete="off"
+            required
           />
+          <datalist id={branchListId}>
+            {branchOptions.map((branch) => (
+              <option
+                key={branch.name}
+                value={branch.name}
+                label={branch.default ? `${branch.name} (default)` : branch.name}
+              />
+            ))}
+          </datalist>
+          {branchLoading ? <p className="field-hint">Loading branches…</p> : null}
+          {!branchLoading && branchError ? (
+            <p className="field-hint">Branches unavailable: {branchError}</p>
+          ) : null}
         </label>
 
         <label>
@@ -106,7 +196,31 @@ function TaskSubmissionCard({
         </label>
 
         <label>
-          Codex Model
+          Merge Request Title
+          <input
+            type="text"
+            value={form.mrTitle}
+            onChange={(event) => setForm((prev) => ({ ...prev, mrTitle: event.target.value }))}
+            placeholder="Agent Task: Short summary"
+            maxLength={240}
+            required
+          />
+          <p className="field-hint">Used as the GitLab merge request title (max 240 characters).</p>
+        </label>
+
+        <label>
+          Prompt
+          <textarea
+            value={form.prompt}
+            onChange={(event) => setForm((prev) => ({ ...prev, prompt: event.target.value }))}
+            placeholder="Explain what the agent should do..."
+            rows={4}
+            required
+          />
+        </label>
+
+        <label>
+          Agent Model
           <select
             value={form.codexModel}
             onChange={(event) => setForm((prev) => ({ ...prev, codexModel: event.target.value }))}
@@ -159,6 +273,17 @@ function TaskSubmissionCard({
       </form>
     </section>
   );
+}
+
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebounced(value), delayMs);
+    return () => clearTimeout(timeout);
+  }, [value, delayMs]);
+
+  return debounced;
 }
 
 export default TaskSubmissionCard;
