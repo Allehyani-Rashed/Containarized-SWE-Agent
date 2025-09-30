@@ -5,7 +5,7 @@ Creates a throwaway project (or reuses a supplied path/ID), registers it via the
 FastAPI orchestrator when needed, submits a task (or inspects an existing one),
 and prints the resulting logs plus `CODEX_CHANGE.log` from the sanitized
 workspace. Defaults to Docker mode, supports per-run snapshots, custom network
-allowlists, and skips cleanup when requested. Accepts either a Codex access
+allowlists at the project level, and skips cleanup when requested. Accepts either a Codex access
 token or a ChatGPT session bundle for authentication.
 """
 
@@ -122,7 +122,7 @@ def _parse_args() -> argparse.Namespace:
         "--allowlist",
         metavar="HOST",
         nargs="+",
-        help="Optional list of allowlisted domains to attach to the task",
+        help="Optional list of domains to store on the project allowlist",
     )
     parser.add_argument(
         "--project-id",
@@ -191,6 +191,11 @@ def _parse_args() -> argparse.Namespace:
         help="Optional branch name to use instead of the generated codex/task-* branch",
     )
     parser.add_argument(
+        "--target-branch",
+        dest="target_branch",
+        help="Target (base) branch for the task; defaults to the project's configured default branch",
+    )
+    parser.add_argument(
         "--codex-model",
         dest="codex_model",
         help="Optional Codex model identifier to use for the task run",
@@ -234,7 +239,8 @@ def _register_project(
     gitlab_host: str,
     gitlab_project_path: str,
     codex_token: Optional[str],
-) -> int:
+    allowlist: Optional[list[str]] = None,
+) -> dict:
     payload = {
         "name": "docker-demo-project",
         "default_branch": "main",
@@ -243,28 +249,38 @@ def _register_project(
     }
     if codex_token:
         payload["codex_token"] = codex_token
+    if allowlist is not None:
+        payload["allowlist"] = allowlist
     response = client.post("/projects", json=payload)
     response.raise_for_status()
-    return response.json()["id"]
+    return response.json()
+
+
+def _update_project_allowlist(client: TestClient, project_id: int, allowlist: list[str]) -> list[str]:
+    response = client.patch(f"/projects/{project_id}", json={"allowlist": allowlist})
+    response.raise_for_status()
+    body = response.json()
+    return body.get("allowlist", allowlist)
 
 
 def _submit_task(
     client: TestClient,
     project_id: int,
     prompt: str,
-    allowlist: list[str],
     *,
     branch_name: Optional[str] = None,
+    target_branch: Optional[str] = None,
     codex_model: Optional[str] = None,
     codex_reasoning_effort: Optional[str] = None,
 ) -> int:
     payload = {
         "project_id": project_id,
         "prompt": prompt,
-        "allowlist": allowlist,
     }
     if branch_name:
         payload["branch_name"] = branch_name
+    if target_branch:
+        payload["target_branch"] = target_branch
     if codex_model:
         payload["codex_model"] = codex_model
     if codex_reasoning_effort:
@@ -294,13 +310,14 @@ def _print_logs(client: TestClient, task_id: int) -> list[str]:
     entries = payload.get("entries", [])
     snapshot_status = payload.get("status")
     snapshot_branch = payload.get("branch") or "--"
+    snapshot_target = payload.get("target_branch") or "--"
     snapshot_model = payload.get("codex_model") or "default"
     snapshot_reasoning = payload.get("codex_reasoning_effort") or "medium"
     snapshot_abort = payload.get("abort_requested", False)
     print(LOG_DIVIDER)
     print("Task log snapshot:")
     print(
-        f"- Status at capture: {snapshot_status or '--'} | Branch: {snapshot_branch} | "
+        f"- Status at capture: {snapshot_status or '--'} | Branch: {snapshot_branch} | Base: {snapshot_target} | "
         f"Model: {snapshot_model} | Reasoning: {snapshot_reasoning} | "
         f"Abort requested: {'yes' if snapshot_abort else 'no'}"
     )
@@ -406,13 +423,15 @@ def main() -> None:
                 project_root: Optional[Path] = None
                 if project_id is None:
                     project_root = _resolve_project_path(args, scratch_dir)
-                    project_id = _register_project(
+                    project_data = _register_project(
                         client,
                         args.gitlab_token,
                         gitlab_host=args.gitlab_host,
                         gitlab_project_path=args.gitlab_project_path,
                         codex_token=args.codex_token,
+                        allowlist=args.allowlist,
                     )
+                    project_id = project_data["id"]
                     print(
                         "Registered project {pid} at {root} (GitLab: {host}/{path})".format(
                             pid=project_id,
@@ -421,6 +440,13 @@ def main() -> None:
                             path=args.gitlab_project_path,
                         )
                     )
+                    configured_allowlist = project_data.get("allowlist", [])
+                    if configured_allowlist:
+                        print(
+                            "Configured project allowlist: {domains}".format(
+                                domains=", ".join(configured_allowlist),
+                            )
+                        )
                     if project_root is not None:
                         try:
                             cache_repo = _seed_project_cache(
@@ -438,6 +464,13 @@ def main() -> None:
                     print(f"Using existing project {project_id} for new task")
                     if args.codex_token:
                         print("warning: --codex-token ignored when reusing an existing project")
+                    if args.allowlist is not None:
+                        updated_allowlist = _update_project_allowlist(client, project_id, args.allowlist)
+                        print(
+                            "Updated project allowlist: {domains}".format(
+                                domains=", ".join(updated_allowlist) if updated_allowlist else "<empty>",
+                            )
+                        )
             elif project_id is not None:
                 print(f"Using existing project {project_id} for inspection")
 
@@ -484,24 +517,23 @@ def main() -> None:
                 task_id = args.task_id
                 print(f"Inspecting existing task {task_id}")
             else:
-                allowlist = args.allowlist or []
                 if project_id is None:
                     raise RuntimeError("Project ID required to submit a new task")
                 task_id = _submit_task(
                     client,
                     project_id,
                     args.prompt,
-                    allowlist,
                     branch_name=args.branch_name,
+                    target_branch=args.target_branch,
                     codex_model=args.codex_model,
                     codex_reasoning_effort=args.codex_reasoning_effort,
                 )
                 print(
-                    "Submitted task {task_id} (project_id={pid}, allowlist={allowlist}, branch={branch}, model={model}, reasoning={reasoning})".format(
+                    "Submitted task {task_id} (project_id={pid}, branch={branch}, base={base}, model={model}, reasoning={reasoning})".format(
                         task_id=task_id,
                         pid=project_id,
-                        allowlist=allowlist or "[]",
                         branch=args.branch_name or "<generated>",
+                        base=args.target_branch or "<default>",
                         model=args.codex_model or "<default>",
                         reasoning=args.codex_reasoning_effort,
                     )
@@ -519,6 +551,8 @@ def main() -> None:
 
             if result.get("branch"):
                 print(f"Branch recorded: {result['branch']}")
+            if result.get("target_branch"):
+                print(f"Base branch: {result['target_branch']}")
             if result.get("codex_model"):
                 print(f"Codex model used: {result['codex_model']}")
             if result.get("codex_reasoning_effort"):

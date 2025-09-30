@@ -64,7 +64,7 @@ curl -sS -X POST "$BACKEND_API_BASE/tasks" \
 JSON
 ```
 Watch the run live in the dashboard. When Docker is available the orchestrator spins up the runner image and streams its output; locally you can dry-run with `RUNNER_GIT_DRY_RUN=1`.
-Provide `branch_name`, `codex_model` (defaults to `gpt-5-codex`), and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to work off a specific branch, model, or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
+Provide `target_branch` when you need to branch from something other than the project's default, `branch_name` to pin the generated task branch, plus `codex_model` (defaults to `gpt-5-codex`) and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to control the model or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
 
 ## Everyday Commands
 - `make dev` – run backend + UI together.
@@ -80,7 +80,8 @@ Provide `branch_name`, `codex_model` (defaults to `gpt-5-codex`), and `codex_rea
 - The runner bundles the real Codex CLI. Skip installation only if you deliberately set `CODEX_ALLOW_STUB=1`.
 - Large build artefacts can bloat sanitized workspaces—prune with `git clean -fdx` or update `.projectsanitize` (legacy `.codexignore`) before long runs.
 - Cache issues are resolved from the deterministic clone under `project-cache/<slug>/repo`; run `scripts/project_cache.py --refresh` (optionally with `--project-id`) to rebuild it instead of editing `.env` or exporting legacy path variables.
-- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, Codex model, and whether an abort was requested so operator tooling can annotate history without another API call.
+- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, base branch, Codex model, and whether an abort was requested so operator tooling can annotate history without another API call.
+- The project cache is rewound to the task's base branch before each run. Switching between `main` and, say, `release` reuses the existing clone and only performs a fetch/reset for the requested branch.
 - Use `python3 scripts/migrate_projectsanitize.py [path]` to rename legacy `.codexignore` files; the helper merges entries so sanitized workspaces stay lean.
 - Threat model details and hardening expectations live in `THREAT_MODEL.md`.
 
