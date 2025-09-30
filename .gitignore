@@ -34,3 +34,5 @@ nohup.out
 !.projectsanitize
 
 chatgpt_session_bundle.json
+project-cache/
+tmp/
