@@ -48,7 +48,7 @@ curl -sS -X POST "$BACKEND_API_BASE/projects" \
 }
 JSON
 ```
-Optionally include `cache_quota_mb` (megabytes) or `cache_prune_after_hours` (hours) to bound clone size and schedule background cleanups. If `.env` already describes this project, `quickstart` creates it automatically, bootstraps `project-cache/<slug>/repo`, and `make dev` keeps it in sync. Otherwise, record the `id` from the response (e.g. `export PROJECT_ID=1`) and open `/projects/${PROJECT_ID}` in the UI to review credentials, cache path/status/commit metadata, and recent task runs from the dedicated detail page (which also exposes a copy-ready cache refresh command).
+Optionally include `cache_quota_mb` (megabytes), `cache_prune_after_hours` (hours), or an `allowlist` array of domains to seed the project's outbound proxy rules. If `.env` already describes this project, `quickstart` creates it automatically, bootstraps `project-cache/<slug>/repo`, and `make dev` keeps it in sync. Otherwise, record the `id` from the response (e.g. `export PROJECT_ID=1`) and open `/projects/${PROJECT_ID}` in the UI to review credentials, cache path/status/commit metadata, configured allowlist domains, and recent task runs from the dedicated detail page (which also exposes a copy-ready cache refresh command).
 
 ## Run Your First Task
 ```bash
@@ -59,12 +59,12 @@ curl -sS -X POST "$BACKEND_API_BASE/tasks" \
 {
   "project_id": ${PROJECT_ID},
   "prompt": "${TASK_PROMPT}",
-  "allowlist": []
+  "mr_title": "Quickstart: ${TASK_PROMPT}"
 }
 JSON
 ```
 Watch the run live in the dashboard. When Docker is available the orchestrator spins up the runner image and streams its output; locally you can dry-run with `RUNNER_GIT_DRY_RUN=1`.
-Provide `target_branch` when you need to branch from something other than the project's default, `branch_name` to pin the generated task branch, plus `codex_model` (defaults to `gpt-5-codex`) and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to control the model or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
+Provide `target_branch` when you need to branch from something other than the project's default, `branch_name` to pin the generated task branch, `mr_title` to override the auto-generated merge request title, plus `codex_model` (defaults to `gpt-5-codex`) and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to control the model or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
 
 ## Everyday Commands
 - `make dev` – run backend + UI together.
@@ -76,7 +76,7 @@ Provide `target_branch` when you need to branch from something other than the pr
 - `python3 scripts/project_cache.py --refresh --project-id <id>` – repair or refresh cached clones at `project-cache/<slug>/repo` without touching sanitised workspaces.
 
 ## Good To Know
-- Tasks route through Tinyproxy with a deny-by-default allowlist. Adjust long-lived domains in `proxy/base_allowlist.conf`; use task-level `allowlist` entries for one-offs.
+- Tasks route through Tinyproxy with a deny-by-default allowlist. Adjust long-lived domains in `proxy/base_allowlist.conf` or update each project's allowlist from the Projects UI/API before submitting tasks.
 - The runner bundles the real Codex CLI. Skip installation only if you deliberately set `CODEX_ALLOW_STUB=1`.
 - Large build artefacts can bloat sanitized workspaces—prune with `git clean -fdx` or update `.projectsanitize` (legacy `.codexignore`) before long runs.
 - Cache issues are resolved from the deterministic clone under `project-cache/<slug>/repo`; run `scripts/project_cache.py --refresh` (optionally with `--project-id`) to rebuild it instead of editing `.env` or exporting legacy path variables.
