@@ -39,6 +39,7 @@
 - Log snapshots (`GET /tasks/{id}/logs?follow=0`) include status, branch, model, and abort metadata; the Tasks UI and `scripts/test_docker_path.py` surface those fields so operators can audit runs without juggling extra API calls.
 - Use the new Verify PAT access button (or POST `/integrations/pat/verify`) after rotating credentials to confirm connectivity; the backend records the host, timestamp, and result without ever returning the secret.
 - Ensure `docker compose` (or `docker-compose`) is available for the proxy preflight; the worker will attempt to launch `codex-egress-proxy` automatically, but repeated failures leave tasks in `failed` status until the compose stack and `codex-shared` network are healthy or `RUNNER_DISABLE_DOCKER=1` is set.
+- Worker restarts now fail any pending or running tasks that predate the reboot and log the recovery; heavy cache operations acquire a file lock with a configurable timeout via `PROJECT_CACHE_LOCK_TIMEOUT_SECONDS` (default 180 s) so operators should re-run the queue after resolving lock contention.
 
 ## Project Structure & Module Organization
 - `app/` – FastAPI orchestrator; main entrypoint `app/app/main.py`.
