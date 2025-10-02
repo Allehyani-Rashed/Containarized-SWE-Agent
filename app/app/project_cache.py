@@ -737,7 +737,7 @@ def refresh_project_cache(
 
             commit_hash = _rev_parse_head(repo_path, env)
             short_hash = commit_hash[:12]
-            log(f"Project cache {identifier} synced to {branch}@{short_hash} ({commit_hash})")
+            log(f"Project cache synced to {branch}@{short_hash} ({commit_hash}) for {identifier}")
             success = True
             return commit_hash
     except ProjectCacheError as exc:

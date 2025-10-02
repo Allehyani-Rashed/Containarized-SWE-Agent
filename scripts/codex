@@ -6,8 +6,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import requests
 
@@ -51,6 +52,35 @@ def _print_status(action: str, payload: Dict[str, Any]) -> None:
             active=active,
         )
     )
+
+
+def _api_request(
+    api_base: str,
+    method: str,
+    path: str,
+    payload: Optional[Dict[str, Any]] = None,
+) -> Any:
+    url = f"{api_base}{path}"
+    request_kwargs: Dict[str, Any] = {"timeout": TIMEOUT_SECONDS}
+    if payload is not None:
+        request_kwargs["json"] = payload
+
+    try:
+        response = requests.request(method, url, **request_kwargs)
+    except requests.RequestException as exc:  # noqa: BLE001 - surface networking issues
+        raise RuntimeError(f"{method} {path} failed: {exc}") from exc
+
+    if response.status_code >= 400:
+        detail = response.text.strip() or response.reason
+        raise RuntimeError(f"{method} {path} failed ({response.status_code}): {detail}")
+
+    if not response.content:
+        return None
+
+    try:
+        return response.json()
+    except ValueError:
+        return None
 
 
 def store_pat(args: argparse.Namespace) -> int:
@@ -206,6 +236,239 @@ def clear_chatgpt_session(args: argparse.Namespace) -> int:
     return 0
 
 
+def _parse_allowlist(entries: Optional[List[str]]) -> tuple[Optional[List[str]], bool]:
+    if not entries:
+        return None, False
+
+    parsed: List[str] = []
+    for raw_entry in entries:
+        if raw_entry is None:
+            continue
+        for piece in raw_entry.split(","):
+            candidate = piece.strip()
+            if candidate:
+                parsed.append(candidate)
+
+    if not parsed:
+        return [], True
+    return parsed, True
+
+
+def _read_session_bundle_inline(path_value: Optional[str], inline_value: Optional[str]) -> Optional[str]:
+    if inline_value and inline_value.strip():
+        return inline_value
+
+    if not path_value:
+        return None
+
+    try:
+        bundle_path = Path(path_value).expanduser()
+        contents = bundle_path.read_text(encoding="utf-8")
+    except OSError as exc:  # noqa: BLE001 - propagate to caller
+        raise RuntimeError(f"Failed to read session bundle: {exc}") from exc
+
+    stripped = contents.strip()
+    return stripped or None
+
+
+def _bootstrap_handle_credentials(
+    api_base: str,
+    actor: Optional[str],
+    gitlab_pat: Optional[str],
+    project_pat: Optional[str],
+    session_bundle_path: Optional[str],
+    session_bundle_inline: Optional[str],
+) -> Dict[str, Any]:
+    pat_status: Optional[Dict[str, Any]] = None
+
+    primary_pat = (gitlab_pat or "").strip()
+    secondary_pat = (project_pat or "").strip()
+    if primary_pat and secondary_pat and primary_pat != secondary_pat:
+        print(
+            "warning: project-level PAT overrides are not supported; using --gitlab-pat value",
+            file=sys.stderr,
+        )
+    if not primary_pat and secondary_pat:
+        primary_pat = secondary_pat
+
+    if primary_pat:
+        payload: Dict[str, Any] = {"token": primary_pat}
+        if actor:
+            payload["updated_by"] = actor
+        pat_status = _api_request(api_base, "POST", "/integrations/pat", payload)
+
+    session_bundle = _read_session_bundle_inline(session_bundle_path, session_bundle_inline)
+    if session_bundle:
+        payload = {"bundle": session_bundle}
+        if actor:
+            payload["updated_by"] = actor
+        pat_status = _api_request(api_base, "POST", "/integrations/pat/session", payload)
+
+    if pat_status is None:
+        snapshot = _api_request(api_base, "GET", "/integrations/pat")
+        if isinstance(snapshot, dict):
+            pat_status = snapshot
+        else:
+            pat_status = {}
+
+    return pat_status
+
+
+def _select_existing_project(
+    projects: List[Dict[str, Any]],
+    host: str,
+    project_path: str,
+    name: Optional[str],
+) -> Optional[Dict[str, Any]]:
+    for candidate in projects:
+        if host and project_path:
+            if (
+                candidate.get("gitlab_host", "").rstrip("/") == host
+                and candidate.get("gitlab_project_path", "").strip("/") == project_path
+            ):
+                return candidate
+
+    if name:
+        for candidate in projects:
+            if candidate.get("name") == name:
+                return candidate
+
+    return None
+
+
+def _bootstrap_ensure_project(api_base: str, args: argparse.Namespace, actor: Optional[str]) -> Dict[str, Any]:
+    host = (args.gitlab_host or "").rstrip("/")
+    project_path = (args.project_path or "").strip("/")
+    allowlist_entries, allowlist_specified = _parse_allowlist(args.allowlist)
+
+    snapshot = _api_request(api_base, "GET", "/projects")
+    projects: List[Dict[str, Any]] = snapshot or []
+    if not isinstance(projects, list):
+        projects = []
+
+    existing = _select_existing_project(projects, host, project_path, args.project_name)
+
+    if existing is not None:
+        project_id = existing.get("id")
+        update_payload: Dict[str, Any] = {}
+
+        if args.project_name and args.project_name != existing.get("name"):
+            update_payload["name"] = args.project_name
+        if args.default_branch and args.default_branch != existing.get("default_branch"):
+            update_payload["default_branch"] = args.default_branch
+        if host and host != (existing.get("gitlab_host") or "").rstrip("/"):
+            update_payload["gitlab_host"] = host
+        if project_path and project_path != (existing.get("gitlab_project_path") or "").strip("/"):
+            update_payload["gitlab_project_path"] = project_path
+        if allowlist_specified:
+            update_payload["allowlist"] = allowlist_entries or []
+
+        project_state: Dict[str, Any]
+        if update_payload:
+            if actor:
+                update_payload["actor"] = actor
+            project_state = _api_request(
+                api_base,
+                "PATCH",
+                f"/projects/{project_id}",
+                update_payload,
+            )
+        else:
+            project_state = existing
+
+        detail = _api_request(api_base, "GET", f"/projects/{project_id}")
+        if isinstance(detail, dict):
+            return detail
+        return project_state
+
+    missing_fields = []
+    if not args.project_name:
+        missing_fields.append("--project-name")
+    if not host:
+        missing_fields.append("--gitlab-host")
+    if not project_path:
+        missing_fields.append("--project-path")
+    if not args.default_branch:
+        missing_fields.append("--default-branch")
+
+    if missing_fields:
+        joined = ", ".join(missing_fields)
+        raise RuntimeError(f"Project does not exist; provide {joined}")
+
+    create_payload: Dict[str, Any] = {
+        "name": args.project_name,
+        "default_branch": args.default_branch,
+        "gitlab_host": host,
+        "gitlab_project_path": project_path,
+    }
+    if allowlist_specified:
+        create_payload["allowlist"] = allowlist_entries or []
+
+    created = _api_request(api_base, "POST", "/projects", create_payload)
+    project_id = created.get("id") if isinstance(created, dict) else None
+
+    if project_id is not None:
+        detail = _api_request(api_base, "GET", f"/projects/{project_id}")
+        if isinstance(detail, dict):
+            return detail
+    return created
+
+
+def projects_bootstrap(args: argparse.Namespace) -> int:
+    api_base = _resolve_api_base(args.api_base)
+    actor = args.actor.strip() if args.actor and args.actor.strip() else None
+    _ = getattr(args, "ui_base_url", None)  # compatibility shim; flag reserved for future use
+
+    try:
+        pat_status = _bootstrap_handle_credentials(
+            api_base,
+            actor,
+            args.gitlab_pat,
+            args.project_pat,
+            args.session_bundle_path,
+            args.session_bundle,
+        )
+        project_payload = _bootstrap_ensure_project(api_base, args, actor)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if not isinstance(pat_status, dict):
+        pat_status = {}
+    if not isinstance(project_payload, dict):
+        print("error: unexpected response payload when bootstrapping project", file=sys.stderr)
+        return 1
+
+    result = {
+        "project": project_payload,
+        "pat": pat_status,
+        "allowlist": project_payload.get("allowlist", []),
+    }
+
+    if args.json:
+        print(json.dumps(result))
+    else:
+        project_id = project_payload.get("id")
+        print(
+            "Project ready: {name} (id={pid})".format(
+                name=project_payload.get("name"),
+                pid=project_id if project_id is not None else "--",
+            )
+        )
+        print(f"  GitLab host: {project_payload.get('gitlab_host')}")
+        print(f"  Project path: {project_payload.get('gitlab_project_path')}")
+        print(f"  Default branch: {project_payload.get('default_branch')}")
+        allowlist = project_payload.get("allowlist") or []
+        if allowlist:
+            print("  Allowlist: " + ", ".join(allowlist))
+        else:
+            print("  Allowlist: <empty>")
+        pat_state = "configured" if pat_status.get("configured") else "missing"
+        print(f"  GitLab PAT: {pat_state}")
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="codex", description="Codex helper CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -279,6 +542,45 @@ def main(argv: list[str] | None = None) -> int:
     )
     clear_session.add_argument("--dry-run", action="store_true", help="Skip network calls and print intent")
     clear_session.set_defaults(func=clear_chatgpt_session)
+
+    projects_parser = subparsers.add_parser("projects", help="Manage projects")
+    projects_subparsers = projects_parser.add_subparsers(dest="projects_command", required=True)
+
+    bootstrap_parser = projects_subparsers.add_parser(
+        "bootstrap",
+        help="Ensure credentials and a project record exist for automation",
+    )
+    bootstrap_parser.add_argument("--api-base", default=default_api, help="Override API base URL")
+    bootstrap_parser.add_argument("--project-name", help="Project display name")
+    bootstrap_parser.add_argument("--gitlab-host", help="GitLab host (e.g. https://gitlab.com)")
+    bootstrap_parser.add_argument("--project-path", help="Namespace/repository path")
+    bootstrap_parser.add_argument("--default-branch", help="Default branch for new tasks")
+    bootstrap_parser.add_argument(
+        "--allowlist",
+        action="append",
+        default=None,
+        help="Allowlisted domains (comma separated or repeat flag)",
+    )
+    bootstrap_parser.add_argument("--gitlab-pat", help="GitLab PAT to store if missing")
+    bootstrap_parser.add_argument(
+        "--project-pat",
+        help="Legacy project-specific PAT (treated as global PAT)",
+    )
+    bootstrap_parser.add_argument(
+        "--session-bundle-path",
+        help="Path to ChatGPT session bundle to import",
+    )
+    bootstrap_parser.add_argument(
+        "--session-bundle",
+        help="Inline ChatGPT session bundle JSON",
+    )
+    bootstrap_parser.add_argument("--actor", help="Operator recorded in audit logs")
+    bootstrap_parser.add_argument(
+        "--ui-base-url",
+        help="Unused placeholder maintained for compatibility",
+    )
+    bootstrap_parser.add_argument("--json", action="store_true", help="Emit JSON payload only")
+    bootstrap_parser.set_defaults(func=projects_bootstrap)
 
     args = parser.parse_args(argv)
     return args.func(args)
