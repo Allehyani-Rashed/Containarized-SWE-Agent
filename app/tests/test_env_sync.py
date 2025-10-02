@@ -37,29 +37,26 @@ class EnvSyncTests(unittest.TestCase):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
 
-    def test_sync_stores_pat_and_codex_token(self) -> None:
+    def test_sync_stores_pat_and_creates_project(self) -> None:
         config = self.env_sync.EnvConfig(
             gitlab_pat="glpat-test-token",
-            codex_token="sk-test-token",
             project_name="demo",
             project_default_branch="main",
             gitlab_host="https://gitlab.example.com",
             gitlab_project_path="example/demo",
             session_bundle_path=None,
-            session_bundle_inline=None,
+            session_bundle_json=None,
             actor="env-sync-tests",
         )
         result = self.env_sync.sync_credentials(config, repo_root=Path(self.tmp_dir.name))
         self.assertTrue(result.gitlab_pat_updated)
         self.assertTrue(result.project_created)
-        self.assertTrue(result.codex_token_updated)
         self.assertIsNotNone(result.project_id)
         self.assertIsNone(result.session_bundle_error)
 
         from sqlmodel import Session, select
         from app.app.integrations import GITLAB_PAT_KIND
         from app.app.models import IntegrationCredential, Project
-        from app.app.secrets import get_secret_manager
 
         with Session(self.engine) as session:
             credential = session.exec(
@@ -69,10 +66,6 @@ class EnvSyncTests(unittest.TestCase):
 
             project = session.get(Project, result.project_id)
             assert project is not None
-            self.assertIsNotNone(project.codex_token_encrypted)
-            manager = get_secret_manager()
-            decrypted = manager.decrypt(project.codex_token_encrypted)
-            self.assertEqual(decrypted, "sk-test-token")
             expected_path = project_cache_repo_path("https://gitlab.example.com", "example/demo")
             computed_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
             self.assertEqual(computed_path, expected_path)
@@ -83,28 +76,25 @@ class EnvSyncTests(unittest.TestCase):
             """
             # comment line
             export GITLAB_PAT='quoted-token'
-            CODEX_ACCESS_TOKEN="quoted-sk"
             PROJECT_NAME=Demo Project
-            
+
             """,
             encoding="utf-8",
         )
 
         values = self.env_sync.parse_env_file(env_file)
         self.assertEqual(values["GITLAB_PAT"], "quoted-token")
-        self.assertEqual(values["CODEX_ACCESS_TOKEN"], "quoted-sk")
         self.assertEqual(values["PROJECT_NAME"], "Demo Project")
 
     def test_missing_session_bundle_allows_pat_sync(self) -> None:
         config = self.env_sync.EnvConfig(
             gitlab_pat="glpat-missing-session",
-            codex_token=None,
             project_name=None,
             project_default_branch=None,
             gitlab_host=None,
             gitlab_project_path=None,
             session_bundle_path=Path(self.tmp_dir.name) / "absent.json",
-            session_bundle_inline=None,
+            session_bundle_json=None,
             actor="env-sync-tests",
         )
         result = self.env_sync.sync_credentials(config, repo_root=Path(self.tmp_dir.name))
@@ -127,13 +117,12 @@ class EnvSyncTests(unittest.TestCase):
         bundle_path.write_text('{"session_token": "token-123"}', encoding="utf-8")
         config = self.env_sync.EnvConfig(
             gitlab_pat=None,
-            codex_token=None,
             project_name=None,
             project_default_branch=None,
             gitlab_host=None,
             gitlab_project_path=None,
             session_bundle_path=bundle_path,
-            session_bundle_inline=None,
+            session_bundle_json=None,
             actor="env-sync-tests",
         )
         result = self.env_sync.sync_credentials(config, repo_root=Path(self.tmp_dir.name))

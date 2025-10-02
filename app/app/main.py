@@ -65,7 +65,7 @@ from .schemas import (
     TaskListResponse,
     TaskRead,
 )
-from .secrets import SecretError, get_secret_manager
+from .secrets import SecretError
 from .worker import TaskQueueManager
 
 _worker: TaskQueueManager | None = None
@@ -528,8 +528,6 @@ def _project_to_read(project: Project, extras: Dict[str, Any] | None = None) -> 
     cache_git_dir = Path(cache_path) / ".git"
     cache_status = "ready" if cache_git_dir.exists() else ("present" if repo_exists else "missing")
     update_payload: Dict[str, Any] = {
-        "codex_token_configured": bool(project.codex_token_encrypted),
-        "codex_token_updated_at": project.codex_token_updated_at,
         "repository_url": _build_repository_url(project),
         "cache_path": cache_path,
         "cache_status": cache_status,
@@ -576,7 +574,6 @@ def create_project(
     session: Session = Depends(get_session),
 ) -> ProjectRead:
     data = payload.model_dump()
-    raw_codex_token = (data.pop("codex_token", None) or "").strip()
     allowlist_entries = data.pop("allowlist", [])
 
     name = _normalize_non_empty(data.get("name"), field="Project name")
@@ -609,10 +606,6 @@ def create_project(
         cache_prune_after_hours=data.get("cache_prune_after_hours"),
         allowlist=normalize_user_allowlist(allowlist_entries or []),
     )
-    if raw_codex_token:
-        manager = get_secret_manager()
-        project.codex_token_encrypted = manager.encrypt(raw_codex_token)
-        project.codex_token_updated_at = datetime.now(timezone.utc)
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -762,10 +755,6 @@ def update_project(
 
     payload_data = payload.model_dump(exclude_unset=True)
     actor = _normalize_actor(payload_data.pop("actor", None))
-    clear_codex_flag = bool(payload_data.pop("clear_codex_token", False))
-    _codex_marker = object()
-    codex_token_value = payload_data.pop("codex_token", _codex_marker)
-    codex_token_provided = codex_token_value is not _codex_marker
 
     updated_fields: list[str] = []
     numeric_fields = {"cache_quota_mb", "cache_prune_after_hours"}
@@ -814,32 +803,13 @@ def update_project(
             project.allowlist = normalized_entries
             updated_fields.append("allowlist")
 
-    manager = get_secret_manager()
-    codex_token_state = None
-    if codex_token_provided:
-        raw_value = (codex_token_value or "").strip()
-        if raw_value:
-            project.codex_token_encrypted = manager.encrypt(raw_value)
-            project.codex_token_updated_at = datetime.now(timezone.utc)
-            codex_token_state = "updated"
-        else:
-            project.codex_token_encrypted = None
-            project.codex_token_updated_at = None
-            codex_token_state = "cleared"
-    elif clear_codex_flag:
-        project.codex_token_encrypted = None
-        project.codex_token_updated_at = None
-        codex_token_state = "cleared"
-
     session.add(project)
 
     details_bits = [f"project_id={project_id}"]
     if updated_fields:
         details_bits.append(f"fields={','.join(updated_fields)}")
-    if codex_token_state:
-        details_bits.append(f"codex_token={codex_token_state}")
     audit_details = ", ".join(details_bits)
-    if updated_fields or codex_token_state:
+    if updated_fields:
         _record_audit_event(session, "project.updated", actor, audit_details)
 
     _ensure_unique_project(

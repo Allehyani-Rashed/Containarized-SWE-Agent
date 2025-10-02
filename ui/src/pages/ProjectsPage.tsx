@@ -24,7 +24,6 @@ type ProjectFormState = {
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
-  codex_token: string;
   cache_quota_mb: string;
   cache_prune_after_hours: string;
   allowlist: string;
@@ -45,7 +44,6 @@ const initialFormState: ProjectFormState = {
   default_branch: 'main',
   gitlab_host: 'https://gitlab.com',
   gitlab_project_path: '',
-  codex_token: '',
   cache_quota_mb: '',
   cache_prune_after_hours: '',
   allowlist: '',
@@ -165,7 +163,6 @@ function ProjectsPage() {
   const [editForm, setEditForm] = useState<ProjectFormState>(initialFormState);
   const [editErrors, setEditErrors] = useState<FormErrors>({});
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const [clearCodexToken, setClearCodexToken] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
@@ -179,7 +176,6 @@ function ProjectsPage() {
     if (!editingProject) {
       setEditForm(initialFormState);
       setEditErrors({});
-      setClearCodexToken(false);
     }
   }, [editingProject]);
 
@@ -269,9 +265,6 @@ function ProjectsPage() {
   const handleEditChange = (field: keyof ProjectFormState, value: string) => {
     setEditForm((prev) => ({ ...prev, [field]: value }));
     updateFieldError(field, value, setEditErrors);
-    if (field === 'codex_token' && value.trim()) {
-      setClearCodexToken(false);
-    }
   };
 
   const runValidation = (form: ProjectFormState): FormErrors => {
@@ -302,7 +295,6 @@ function ProjectsPage() {
       default_branch: createForm.default_branch.trim(),
       gitlab_host: normalizeHost(createForm.gitlab_host),
       gitlab_project_path: normalizeProjectPath(createForm.gitlab_project_path),
-      codex_token: createForm.codex_token.trim() ? createForm.codex_token.trim() : null,
       allowlist: parseAllowlist(createForm.allowlist),
     };
 
@@ -368,13 +360,6 @@ function ProjectsPage() {
       payload.cache_prune_after_hours = null;
     }
 
-    const trimmedToken = editForm.codex_token.trim();
-    if (trimmedToken) {
-      payload.codex_token = trimmedToken;
-    } else if (clearCodexToken) {
-      payload.clear_codex_token = true;
-    }
-
     setEditSubmitting(true);
     try {
       await updateProject(editingProject.id, payload);
@@ -382,7 +367,6 @@ function ProjectsPage() {
       setEditingProject(null);
       setEditForm(initialFormState);
       setEditErrors({});
-      setClearCodexToken(false);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update project';
       setPageError(message);
@@ -398,14 +382,12 @@ function ProjectsPage() {
       default_branch: project.default_branch,
       gitlab_host: project.gitlab_host,
       gitlab_project_path: project.gitlab_project_path,
-      codex_token: '',
       cache_quota_mb: project.cache_quota_mb == null ? '' : String(project.cache_quota_mb),
       cache_prune_after_hours:
         project.cache_prune_after_hours == null ? '' : String(project.cache_prune_after_hours),
       allowlist: project.allowlist.length ? project.allowlist.join('\n') : '',
     });
     setEditErrors({});
-    setClearCodexToken(false);
     setPageError(null);
     setSuccessMessage(null);
   }, []);
@@ -438,7 +420,6 @@ function ProjectsPage() {
     setEditingProject(null);
     setEditForm(initialFormState);
     setEditErrors({});
-    setClearCodexToken(false);
   };
 
   const handleDelete = (project: Project) => {
@@ -475,17 +456,7 @@ function ProjectsPage() {
     }
   };
 
-  const renderCredentialBadge = (project: Project) => {
-    if (project.codex_token_configured) {
-      return (
-        <div className="table-status">
-          <span className="status status-done">Project token</span>
-          {project.codex_token_updated_at ? (
-            <div className="meta">Updated {formatTimestamp(project.codex_token_updated_at)}</div>
-          ) : null}
-        </div>
-      );
-    }
+  const renderCredentialBadge = () => {
     if (patStatus.session_configured) {
       return (
         <div className="table-status">
@@ -649,15 +620,6 @@ function ProjectsPage() {
             />
             <p className="field-hint">Enter one domain per line (commas also supported). Leave blank to use only the default deny list.</p>
           </label>
-          <label>
-            Agent API Token (optional)
-            <input
-              type="password"
-              value={createForm.codex_token}
-              onChange={(event) => handleCreateChange('codex_token', event.target.value)}
-              placeholder="sk-..."
-            />
-          </label>
           <div className="field-grid">
             <label>
               Cache Quota (MB)
@@ -743,7 +705,7 @@ function ProjectsPage() {
                       <td>{project.gitlab_host || '—'}</td>
                       <td>{project.default_branch}</td>
                       <td>{renderAllowlistBadge(project.allowlist_status)}</td>
-                      <td>{renderCredentialBadge(project)}</td>
+                      <td>{renderCredentialBadge()}</td>
                       <td>
                         {project.last_task_at ? (
                           <div className="table-status">
@@ -865,26 +827,6 @@ function ProjectsPage() {
           />
           <p className="field-hint">One domain per line or separated with commas. Leave blank to rely on defaults.</p>
         </label>
-        <label>
-          Update Agent API Token (optional)
-          <input
-            type="password"
-            value={editForm.codex_token}
-            onChange={(event) => handleEditChange('codex_token', event.target.value)}
-            placeholder={editingProject.codex_token_configured ? 'Enter new token to rotate' : 'sk-...'}
-          />
-        </label>
-        {editingProject.codex_token_configured ? (
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={clearCodexToken}
-              onChange={(event) => setClearCodexToken(event.target.checked)}
-              disabled={Boolean(editForm.codex_token.trim())}
-            />
-            <span>Clear stored agent token for this project</span>
-          </label>
-        ) : null}
         <div className="field-grid">
           <label>
             Cache Quota (MB)

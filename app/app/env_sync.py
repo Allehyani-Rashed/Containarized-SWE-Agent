@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -16,7 +15,6 @@ from .integrations import (
     set_gitlab_pat_token,
 )
 from .models import Project
-from .secrets import SecretError, get_secret_manager
 
 ENV_ACTOR_FALLBACK = "env-sync"
 SESSION_BUNDLE_DEFAULT = "chatgpt_session_bundle.json"
@@ -29,13 +27,12 @@ class EnvSyncError(RuntimeError):
 @dataclass
 class EnvConfig:
     gitlab_pat: Optional[str]
-    codex_token: Optional[str]
     project_name: Optional[str]
     project_default_branch: Optional[str]
     gitlab_host: Optional[str]
     gitlab_project_path: Optional[str]
     session_bundle_path: Optional[Path]
-    session_bundle_inline: Optional[str]
+    session_bundle_json: Optional[str]
     actor: str = ENV_ACTOR_FALLBACK
 
 
@@ -46,7 +43,6 @@ class EnvSyncResult:
     session_bundle_error: Optional[str] = None
     project_created: bool = False
     project_updated: bool = False
-    codex_token_updated: bool = False
     project_id: Optional[int] = None
 
 
@@ -77,8 +73,8 @@ def parse_env_file(path: Path) -> Dict[str, str]:
 
 
 def _read_session_bundle(config: EnvConfig, repo_root: Path) -> Optional[str]:
-    if config.session_bundle_inline:
-        bundle = config.session_bundle_inline.strip()
+    if config.session_bundle_json:
+        bundle = config.session_bundle_json.strip()
         return bundle or None
 
     candidate_path = config.session_bundle_path
@@ -152,20 +148,6 @@ def _ensure_project(session: Session, config: EnvConfig) -> EnvSyncResult:
             setattr(project, field, value)
             updated = True
 
-    if config.codex_token:
-        manager = get_secret_manager()
-        existing = None
-        if project.codex_token_encrypted:
-            try:
-                existing = manager.decrypt(project.codex_token_encrypted)
-            except SecretError:
-                existing = None
-        if existing != config.codex_token:
-            project.codex_token_encrypted = manager.encrypt(config.codex_token)
-            project.codex_token_updated_at = datetime.now(timezone.utc)
-            updated = True
-            result.codex_token_updated = True
-
     if updated:
         session.add(project)
         result.project_updated = True
@@ -208,7 +190,6 @@ def sync_credentials(config: EnvConfig, *, repo_root: Optional[Path] = None) -> 
             project_result = _ensure_project(session, config)
             result.project_created = project_result.project_created
             result.project_updated = project_result.project_updated
-            result.codex_token_updated = project_result.codex_token_updated
             result.project_id = project_result.project_id
 
     return result

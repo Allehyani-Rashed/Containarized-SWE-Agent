@@ -8,7 +8,7 @@
 - Credential management card drives PAT rotation, verification, and ChatGPT session import flows using `/integrations/pat` endpoints with optimistic UI state and modal confirmations.
 
 ## Backend DTO & API Audit (`app/app/schemas.py`, `app/app/main.py`)
-- `ProjectCreate` accepts optional `codex_token`; FastAPI `POST /projects` persists the project and encrypts the token via `get_secret_manager()`.
+- `ProjectCreate` persists project metadata only; Codex authentication now depends exclusively on ChatGPT session bundles managed through the integrations APIs.
 - `TaskCreate` exposes `project_id`, `prompt`, `allowlist` only; the backend currently derives branch names internally and never captures a Codex model id.
 - `TaskRead` includes branch, MR URL, workspace path, Codex agent metadata, but these fields are read-only.
 - `GET /tasks` (not shown above) returns ordered tasks, while `POST /tasks` persists new tasks and enqueues them with `TaskQueueManager`.
@@ -23,7 +23,7 @@
 - PAT storage is write-only with audit logging; verification endpoint records status, host, and timestamp without returning secrets.
 - ChatGPT session bundles serve as fallback credentials; runner mounts bundles into `~/.codex/auth.json` and clears the base64 environment variables after use.
 - UI tasks are gated on a configured PAT; queued tasks fail fast if the PAT is cleared while pending.
-- Settings card must continue surfacing verification status, active credential (API token vs session), and destructive-clear flows with modal confirmations.
+- Settings card must continue surfacing verification status, active credential (session vs missing), and destructive-clear flows with modal confirmations.
 
 ## Sanitizer Filename Decision
 - Stakeholders (operations, security, runner maintainers) agree to rename `.codexignore` to `.projectsanitize` for clarity with sanitized workspaces.

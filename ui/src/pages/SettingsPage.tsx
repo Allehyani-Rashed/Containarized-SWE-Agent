@@ -62,8 +62,6 @@ function SettingsPage() {
 
   const activeCredentialLabel = useMemo(() => {
     switch (patStatus.active_credential) {
-      case 'api_token':
-        return 'Agent API token';
       case 'session':
         return 'ChatGPT session bundle';
       default:
@@ -451,7 +449,7 @@ function SettingsPage() {
               Clear Session Bundle
             </button>
             <p className="pat-hint">
-              Session bundles let Docker runs authenticate without an agent API key. Import fresh bundles after updating your credentials and clear them if they expire or are revoked.
+              ChatGPT session bundles are required for Docker-backed Codex runs. Import a fresh bundle whenever you rotate credentials and clear it only when the session is no longer valid.
             </p>
           </div>
         </div>
@@ -505,7 +503,7 @@ function SettingsPage() {
           <div className="modal">
             <h3>Clear ChatGPT Session Bundle?</h3>
             <p>
-              Clearing the session bundle forces Docker tasks to rely on an agent API token. Import a fresh bundle after clearing to continue using session-based authentication.
+              Clearing the session bundle disables Docker-backed Codex runs until you import a replacement. Stub-only runs (set RUNNER_DISABLE_DOCKER=1) continue to work without a session bundle.
             </p>
             <label>
               Cleared By (optional)

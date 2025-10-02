@@ -40,7 +40,7 @@ from .project_cache import (
 )
 from .proxy_runtime import ensure_proxy_stack
 from .sanitizer import sanitize_workspace
-from .secrets import SecretError, get_secret_manager
+from .secrets import SecretError
 
 LOG_POLL_INTERVAL_SECONDS = 0.5
 BRANCH_PREFIX = "codex/task"
@@ -221,7 +221,6 @@ class TaskQueueManager:
         project_gitlab_token_value = ""
         project_cache_quota_mb: int | None = None
         project_cache_prune_after_hours: int | None = None
-        codex_token: str | None = None
         session_bundle: ChatGPTSessionMaterial | None = None
         session_bundle_error: str | None = None
         branch_name = ""
@@ -310,17 +309,6 @@ class TaskQueueManager:
                     session.commit()
                     self._mark_complete(task_id)
                     return
-                if project.codex_token_encrypted:
-                    try:
-                        codex_token = get_secret_manager().decrypt(project.codex_token_encrypted)
-                    except SecretError as exc:
-                        self._append_log(task_id, f"Codex credential decryption failed: {exc}")
-                        task.status = TaskStatus.failed
-                        task.finished_at = datetime.now(timezone.utc)
-                        session.add(task)
-                        session.commit()
-                        self._mark_complete(task_id)
-                        return
                 try:
                     session_bundle = self._resolve_chatgpt_session_bundle(session)
                 except ChatGPTSessionError as exc:
@@ -342,7 +330,7 @@ class TaskQueueManager:
                 self._mark_complete(task_id)
                 return
 
-            require_codex_token = os.environ.get("RUNNER_DISABLE_DOCKER", "0") != "1"
+            require_codex_session = os.environ.get("RUNNER_DISABLE_DOCKER", "0") != "1"
             session_bundle_raw: str | None = None
             session_bundle_expires_at: datetime | None = None
             if session_bundle is not None:
@@ -356,12 +344,12 @@ class TaskQueueManager:
                     session_bundle = None
                     session_bundle_expires_at = None
 
-            using_api_token = bool(codex_token)
-            using_session_bundle = bool(session_bundle_raw) and not using_api_token
+            using_session_bundle = bool(session_bundle_raw)
             credential_error: str | None = None
-            if not using_api_token and not using_session_bundle and require_codex_token:
-                credential_error = session_bundle_error or (
-                    "Codex credentials unavailable; configure a CODEX access token or import a ChatGPT session bundle"
+            if not using_session_bundle and require_codex_session:
+                credential_error = (
+                    session_bundle_error
+                    or "Codex credentials unavailable; import a ChatGPT session bundle via Settings -> Integrations"
                 )
 
             if credential_error:
@@ -378,12 +366,7 @@ class TaskQueueManager:
                 return
 
             credential_description: str | None = None
-            if using_api_token:
-                if session_bundle_raw:
-                    credential_description = "Codex credential: using API access token (ChatGPT session stored but not required)"
-                else:
-                    credential_description = "Codex credential: using API access token"
-            elif using_session_bundle:
+            if using_session_bundle:
                 if session_bundle_expires_at is not None:
                     credential_description = (
                         "Codex credential: using ChatGPT session bundle (expires "
@@ -391,19 +374,14 @@ class TaskQueueManager:
                     )
                 else:
                     credential_description = "Codex credential: using ChatGPT session bundle"
-            elif not require_codex_token:
+            elif not require_codex_session:
                 credential_description = "Codex credential: not required (Docker disabled)"
 
             if credential_description:
                 self._append_log(task_id, credential_description)
 
             if session_bundle_error:
-                if using_api_token:
-                    self._append_log(
-                        task_id,
-                        f"ChatGPT session bundle unusable ({session_bundle_error}); proceeding with configured API token",
-                    )
-                elif not require_codex_token:
+                if not require_codex_session:
                     self._append_log(
                         task_id,
                         f"ChatGPT session bundle unusable ({session_bundle_error}); continuing with local stub",
@@ -416,7 +394,7 @@ class TaskQueueManager:
             ):
                 return
 
-            redactions = [gitlab_token, codex_token or ""]
+            redactions = [gitlab_token]
             if session_bundle_raw:
                 redactions.append(session_bundle_raw)
                 try:
@@ -634,7 +612,6 @@ class TaskQueueManager:
                     gitlab_host=gitlab_host,
                     gitlab_project_path=gitlab_project_path,
                     gitlab_token=gitlab_token,
-                    codex_token=codex_token,
                     chatgpt_session_bundle=session_bundle_raw,
                     target_branch=target_branch,
                     branch_name=branch_name,
@@ -1059,10 +1036,11 @@ class TaskQueueManager:
         if active_task is not None:
             if detail_str:
                 message = (
-                    f"ChatGPT session bundle cleared {detail_str}; tasks without API tokens will now fail until re-imported"
+                    f"ChatGPT session bundle cleared {detail_str}; Docker-backed runs will fail until a new bundle is imported"
                 )
             else:
                 message = (
-                    "ChatGPT session bundle cleared; tasks without API tokens will now fail until re-imported"
+                    "ChatGPT session bundle cleared; Docker-backed runs will fail until a new bundle is imported"
                 )
+            message += ". Stub-only runs (RUNNER_DISABLE_DOCKER=1) remain available."
             self._append_log(active_task, message)

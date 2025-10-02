@@ -201,8 +201,8 @@ Implement an open-source **local-first** tool that:
 3. ✅ Re-running a task with `example.org` appended rewrites the filter and permits the request without restarting services.
 4. ✅ Unit coverage in `app/tests/test_phase6.py` verifies normalization, per-task filter writes (with `PROXY_DIR` override), and log plumbing for the effective allowlist.
 5. ✅ `GITLAB_PAT=test-token RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --allowlist pypi.org --prompt "Exercise proxy" --snapshot-prefix phase6` ran the full Docker path against the compose proxy, restarted filters, and completed with a dry-run branch + MR link in the logs.
-6. ✅ `RUNNER_GIT_DRY_RUN=1 DOCKER_HOST=unix:///Users/rashed/.docker/run/docker.sock python3 scripts/test_docker_path.py --prompt "Proxy docker run" --snapshot-prefix proxy-docker --codex-token sk-test --expect-auth-failure` confirmed the new proxy preflight auto-launched `codex-egress-proxy`, recreated `codex-shared`, and streamed Docker-mode logs (task failed later with Codex exit 42 due to the placeholder token).
-7. ✅ `RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --prompt "Proxy stub run" --snapshot-prefix proxy-stub --disable-docker --codex-token sk-test` validated that stub mode bypasses the preflight while still refreshing the proxy filter and completing `finish_task` in dry-run mode.
+6. ✅ `RUNNER_GIT_DRY_RUN=1 DOCKER_HOST=unix:///Users/rashed/.docker/run/docker.sock python3 scripts/test_docker_path.py --prompt "Proxy docker run" --snapshot-prefix proxy-docker --session-bundle chatgpt_session_bundle.json --expect-auth-failure` confirmed the new proxy preflight auto-launched `codex-egress-proxy`, recreated `codex-shared`, and streamed Docker-mode logs (task failed later with Codex exit 42 when the placeholder bundle was intentionally invalid).
+7. ✅ `RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --prompt "Proxy stub run" --snapshot-prefix proxy-stub --disable-docker` validated that stub mode bypasses the preflight while still refreshing the proxy filter and completing `finish_task` in dry-run mode without requiring Codex credentials.
 
 ---
 
@@ -260,7 +260,7 @@ The orchestrator now writes redacted log lines to `workspaces/logs/<task>.log`, 
 **Test plan (End-to-End)**
 0. ✅ `bash -n scripts/quickstart.sh` (syntax sanity for the bootstrap helper).
 1. ✅ Fresh clone → Quickstart steps → submit prompt “Add /healthz endpoint”. Executed `RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --prompt "Add /healthz endpoint" --disable-docker` which bootstrapped a temporary project via the TestClient, seeded a placeholder PAT, and confirmed the stub runner produced `CODEX_CHANGE.log` while finishing with `Codex SUCCESS (exit code 0)`.
-2. ✅ Observe: task starts → logs stream → branch created → MR opened → MR link visible in UI. Verified with `RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --prompt "Add /healthz endpoint" --codex-token sk-test --allowlist gitlab.com --snapshot-prefix quickstart-dryrun`, yielding branch `codex/task-20250926-417048`, MR URL `https://gitlab.example.com/example/docker-demo/-/merge_requests`, and a preserved workspace snapshot under `workspaces/snapshots/quickstart-dryrun-20250926-104153`.
+2. ✅ Observe: task starts → logs stream → branch created → MR opened → MR link visible in UI. Verified with `RUNNER_GIT_DRY_RUN=1 python3 scripts/test_docker_path.py --prompt "Add /healthz endpoint" --session-bundle chatgpt_session_bundle.json --allowlist gitlab.com --snapshot-prefix quickstart-dryrun`, yielding branch `codex/task-20250926-417048`, MR URL `https://gitlab.example.com/example/docker-demo/-/merge_requests`, and a preserved workspace snapshot under `workspaces/snapshots/quickstart-dryrun-20250926-104153`.
 
 ---
 
@@ -297,14 +297,14 @@ The orchestrator now writes redacted log lines to `workspaces/logs/<task>.log`, 
 
 ## Phase 10 — Codex Agent Integration
 
-The runner now stages the deterministic shim alongside a bootstrap installer; when `CODEX_AGENT_TARBALL` or `CODEX_AGENT_URL` is provided at build time the real Codex CLI is unpacked into `/opt/codex/bin/codex`, so Docker runs execute the live agent while the shim remains available for dry runs. The agent validates `CODEX_ACCESS_TOKEN`, emits `CODEX_SUMMARY.md`, and appends metadata to existing workspace files.
+The runner now stages the deterministic shim alongside a bootstrap installer; when `CODEX_AGENT_TARBALL` or `CODEX_AGENT_URL` is provided at build time the real Codex CLI is unpacked into `/opt/codex/bin/codex`, so Docker runs execute the live agent while the shim remains available for dry runs. The agent validates the injected ChatGPT session bundle (translated into `CODEX_ACCESS_TOKEN` internally), emits `CODEX_SUMMARY.md`, and appends metadata to existing workspace files.
 
 **TODO**
 - [x] Support bundling the real Codex agent binary (locally staged or downloaded) during the runner build via `CODEX_AGENT_TARBALL`/`CODEX_AGENT_URL` so Docker tasks call it instead of the shim when available.
-- [x] Wire runner startup to authenticate with the Codex service (PAT or service account token) via env vars; redact values in logs and document required scopes.
+- [x] Wire runner startup to authenticate with the Codex service using the imported ChatGPT session bundle; redact material in logs and document expiry handling.
 - [x] Update orchestrator command to execute `codex exec --cd /work --skip-git-repo-check --yolo -`, surfacing the flag in task logs so operators see the execution mode.
 - [x] Mirror upstream CLI guidance from [docs/sandbox.md](https://github.com/openai/codex/blob/main/docs/sandbox.md) (`--dangerously-bypass-approvals-and-sandbox`, alias `--yolo`) and [docs/authentication.md](https://github.com/openai/codex/blob/main/docs/authentication.md) when documenting the new flow.
-- [x] Plumb project-level Codex credentials through project registration (FastAPI + UI form), persist them encrypted, and expose redacted status in task details.
+- [x] Ensure project registration focuses on repository metadata while Codex credentials flow exclusively through the integrations endpoints (session bundle storage + status exposure).
 - [x] Refresh smoke tests (`scripts/test_docker_path.py`, `make smoke-docker`) to validate the `--yolo` invocation path and cover auth failures with clear messaging.
 
 **Exit criteria**
@@ -313,7 +313,7 @@ The runner now stages the deterministic shim alongside a bootstrap installer; wh
 - [x] UI shows Codex mode (`--yolo`) and agent version emitted by the live CLI (currently reports the stub version).
 
 **Test plan**
-1. ✅ Build the runner with `CODEX_AGENT_TARBALL`/`CODEX_AGENT_URL` and run `make smoke-docker` (or `scripts/test_docker_path.py --codex-token ...`) to confirm Docker path success with the live agent.
+1. ✅ Build the runner with `CODEX_AGENT_TARBALL`/`CODEX_AGENT_URL` and run `make smoke-docker` (or `scripts/test_docker_path.py --session-bundle ...`) to confirm Docker path success with the live agent.
 2. ✅ Re-run with an invalid token and `--expect-auth-failure` to confirm graceful failures from the real agent.
 3. ✅ Execute a dry-run (`RUNNER_DISABLE_DOCKER=1`) to ensure the stub fallback still works once the live agent is bundled.
 
@@ -338,24 +338,23 @@ The runner now stages the deterministic shim alongside a bootstrap installer; wh
 
 ## Phase 12 — ChatGPT Session Token Compatibility
 
-Bridge the runner to work with ChatGPT session credentials (the `~/.codex/auth.json` payload emitted by `codex login`) so operators without direct API access can execute tasks while preserving existing API-key flows.
+Bridge the runner to work with ChatGPT session credentials (the `~/.codex/auth.json` payload emitted by `codex login`) so operators without direct API access can execute tasks without relying on legacy API-key flows.
 
 **TODO**
 - [x] Extend the credential store and API to accept a ChatGPT session bundle, storing it encrypted alongside existing PAT metadata and surfacing redacted status through `/integrations/pat`.
 - [x] Teach the orchestrator to detect session-based credentials, refresh or exchange them for runnable tokens, and inject the appropriate auth material into task environments without exposing raw secrets in logs.
-- [x] Update the runner’s `codex` shim (and Docker image bootstrap) to validate either `CODEX_ACCESS_TOKEN` or a mounted session bundle, translating the latter into the headers the live agent expects.
+- [x] Update the runner’s `codex` shim (and Docker image bootstrap) to validate the mounted session bundle and translate it into the headers the live agent expects.
 - [x] Add UI workflow and CLI helpers (`scripts/codex pat import-chatgpt`) for uploading/rotating the session file, including validation, audit logging, and guardrails when both credential types coexist.
-- [x] Document dual-mode authentication in README/Quickstart and threat model updates covering ChatGPT session handling and expiry edge cases.
+- [x] Document session-only authentication in README/Quickstart and threat model updates covering ChatGPT session handling and expiry edge cases.
 
 **Exit criteria**
-- [x] Operators can supply either an API key or a ChatGPT session bundle; tasks auto-select the active credential and run without manual edits.
+- [x] Operators provide a ChatGPT session bundle; tasks auto-select the active credential and run without manual edits.
 - [x] Session credentials refresh or fail gracefully (clear error messaging, zero secret leakage) when expired or revoked.
 - [x] Smoke tests cover both credential types and confirm the orchestrator/runner honor rotation + redaction requirements.
 
 **Test plan**
-1. ✅ Import a sample `auth.json` via CLI/UI flow; launch Docker-backed task and confirm the live agent runs without `CODEX_ACCESS_TOKEN` set (`python -m unittest app.tests.test_codex_credentials` exercises the stub path; manual smoke `scripts/test_docker_path.py --session-bundle` covers Docker).
-2. ✅ Rotate back to an API key; ensure tasks prefer the API key and the session bundle is ignored (worker logs call out the active credential and unit tests confirm API token precedence).
-3. ✅ Force an expired session token and verify the task fails with actionable guidance while audit logs capture the event (`python -m unittest app.tests.test_chatgpt_session` validates rejection of expired bundles).
+1. ✅ Import a sample `auth.json` via CLI/UI flow; launch Docker-backed task and confirm the live agent runs without an API token set (`python -m unittest app.tests.test_codex_credentials` exercises the stub path; manual smoke `scripts/test_docker_path.py --session-bundle` covers Docker).
+2. ✅ Force an expired session token and verify the task fails with actionable guidance while audit logs capture the event (`python -m unittest app.tests.test_chatgpt_session` validates rejection of expired bundles).
 
 ## Phase 13 — Credential UX Hardening
 

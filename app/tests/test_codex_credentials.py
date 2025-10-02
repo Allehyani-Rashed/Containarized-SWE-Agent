@@ -60,14 +60,13 @@ class CodexCredentialTests(unittest.TestCase):
         }
         return json.dumps(payload)
 
-    def test_project_creation_encrypts_codex_token(self) -> None:
+    def test_project_creation_exposes_cache_metadata_without_codex_token_fields(self) -> None:
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         project_root = project_cache_repo_path("https://gitlab.example.com", "example/cred-demo")
         project_root.mkdir(parents=True, exist_ok=True)
         (project_root / "README.md").write_text("demo\n", encoding="utf-8")
         (project_root / ".git").mkdir(parents=True, exist_ok=True)
 
-        token_value = "codex-secret-token"
         with TestClient(self.main.app) as client:
             rotate_resp = client.post("/integrations/pat", json={"token": "gitlab-token"})
             self.assertEqual(rotate_resp.status_code, 200)
@@ -76,32 +75,16 @@ class CodexCredentialTests(unittest.TestCase):
                 "default_branch": "main",
                 "gitlab_host": "https://gitlab.example.com",
                 "gitlab_project_path": "example/cred-demo",
-                "codex_token": token_value,
             }
             response = client.post("/projects", json=payload)
             self.assertEqual(response.status_code, 201)
             body = response.json()
-            self.assertTrue(body["codex_token_configured"])
-            self.assertIsNotNone(body["codex_token_updated_at"])
             self.assertEqual(body["cache_path"], str(project_root))
             self.assertEqual(body["cache_status"], "ready")
+            self.assertNotIn("codex_token_configured", body)
+            self.assertNotIn("codex_token_updated_at", body)
 
-        from sqlmodel import Session, select
-        from app.app.database import engine
-        from app.app.models import Project
-        from app.app.secrets import get_secret_manager
-
-        with Session(engine) as session:
-            project = session.exec(select(Project)).first()
-            self.assertIsNotNone(project)
-            assert project is not None
-            self.assertIsNotNone(project.codex_token_encrypted)
-            self.assertNotEqual(project.codex_token_encrypted, token_value)
-            manager = get_secret_manager()
-            decrypted = manager.decrypt(project.codex_token_encrypted)
-            self.assertEqual(decrypted, token_value)
-
-    def test_missing_codex_token_aborts_when_docker_enabled(self) -> None:
+    def test_missing_session_bundle_aborts_when_docker_enabled(self) -> None:
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         project_root = project_cache_repo_path(
             "https://gitlab.example.com",
@@ -131,7 +114,7 @@ class CodexCredentialTests(unittest.TestCase):
                 "/tasks",
                 json={
                     "project_id": project_id,
-                    "prompt": "Attempt run without codex token",
+                    "prompt": "Attempt run without session",
                 },
             )
             self.assertEqual(task_resp.status_code, 201)
@@ -158,7 +141,7 @@ class CodexCredentialTests(unittest.TestCase):
             self.assertFalse(snapshot_payload.get("abort_requested", False))
             self.assertTrue(
                 any(
-                    "Codex credentials unavailable" in entry or "configure a CODEX access token" in entry
+                    "Codex credentials unavailable; import a ChatGPT session bundle" in entry
                     for entry in entries
                 )
             )

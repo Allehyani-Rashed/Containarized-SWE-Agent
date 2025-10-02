@@ -65,7 +65,6 @@ def run_codex(
     gitlab_host: str,
     gitlab_project_path: str,
     gitlab_token: str,
-    codex_token: Optional[str],
     chatgpt_session_bundle: Optional[str],
     target_branch: str,
     branch_name: str,
@@ -113,16 +112,11 @@ def run_codex(
     if dry_run_flag is not None:
         runner_env["RUNNER_GIT_DRY_RUN"] = dry_run_flag
 
-    if codex_token:
-        runner_env["CODEX_ACCESS_TOKEN"] = codex_token
-
     if chatgpt_session_bundle:
         encoded_bundle = base64.b64encode(chatgpt_session_bundle.encode("utf-8")).decode("ascii")
         runner_env["CODEX_SESSION_BUNDLE_B64"] = encoded_bundle
         if "CODEX_CREDENTIAL_MODE" not in runner_env:
             runner_env["CODEX_CREDENTIAL_MODE"] = "session"
-    elif codex_token:
-        runner_env["CODEX_CREDENTIAL_MODE"] = "api_token"
 
     runner_env.update(proxy_environment())
 
@@ -132,7 +126,11 @@ def run_codex(
     if reasoning_effort:
         runner_env["CODEX_MODEL_REASONING_EFFORT"] = reasoning_effort
 
+    allow_stub_fallback = os.environ.get("RUNNER_ALLOW_STUB_FALLBACK", "1") not in {"0", "false", "False"}
+
     if os.environ.get("RUNNER_DISABLE_DOCKER", "0") == "1":
+        if log_fn:
+            log_fn("Docker execution disabled via RUNNER_DISABLE_DOCKER=1; using local stub runner")
         exit_code = _run_local_stub(
             workspace,
             prompt,
@@ -169,6 +167,16 @@ def run_codex(
     except CodexRunnerAborted:
         raise
     except (DockerException, CodexRunnerError) as exc:
+        if not allow_stub_fallback:
+            if log_fn:
+                log_fn(
+                    "Docker execution failed and stub fallback is disabled; "
+                    "set RUNNER_ALLOW_STUB_FALLBACK=1 to permit stubs",
+                )
+                log_fn(f"Underlying error: {exc}")
+            raise CodexRunnerError(
+                "Docker runner failed and stub fallback is disallowed",
+            ) from exc
         if log_fn:
             log_fn(f"Docker unavailable or failed ({exc}); using local stub")
         exit_code = _run_local_stub(
@@ -483,6 +491,10 @@ def _run_local_stub(
 
     env = os.environ.copy()
     env.update(runner_env)
+    # The stub runner should not require real Codex credentials. Provide a placeholder
+    # token when none is configured so legacy shims that still probe CODEX_ACCESS_TOKEN
+    # keep working in Docker-free workflows.
+    env.setdefault("CODEX_ACCESS_TOKEN", "sk-local-stub-placeholder-token")
     env["CODEX_PROMPT"] = prompt
     env["EGRESS_ALLOWLIST"] = ",".join(allowlist)
     env["HOME"] = runner_env.get("HOME", str(workspace))

@@ -52,11 +52,7 @@ def get_gitlab_pat_status(session: Session) -> GitLabPATStatus:
     pat_configured = bool(pat_credential and pat_credential.token_encrypted)
     session_configured = bool(session_credential and session_credential.token_encrypted)
 
-    active_credential = "none"
-    if pat_configured:
-        active_credential = "api_token"
-    elif session_configured:
-        active_credential = "session"
+    active_credential = "session" if session_configured else "none"
 
     return GitLabPATStatus(
         configured=pat_configured,

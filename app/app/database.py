@@ -78,8 +78,6 @@ def _ensure_project_columns(db_engine) -> None:
         columns = {column["name"] for column in column_info}
     statements: dict[str, str] = {
         "gitlab_token": "ALTER TABLE project ADD COLUMN gitlab_token VARCHAR",
-        "codex_token_encrypted": "ALTER TABLE project ADD COLUMN codex_token_encrypted VARCHAR",
-        "codex_token_updated_at": "ALTER TABLE project ADD COLUMN codex_token_updated_at DATETIME",
         "cache_quota_mb": "ALTER TABLE project ADD COLUMN cache_quota_mb INTEGER",
         "cache_prune_after_hours": "ALTER TABLE project ADD COLUMN cache_prune_after_hours INTEGER",
         "allowlist": "ALTER TABLE project ADD COLUMN allowlist JSON",

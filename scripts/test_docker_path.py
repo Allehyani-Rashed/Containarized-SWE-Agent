@@ -5,8 +5,8 @@ Creates a throwaway project (or reuses a supplied path/ID), registers it via the
 FastAPI orchestrator when needed, submits a task (or inspects an existing one),
 and prints the resulting logs plus `CODEX_CHANGE.log` from the sanitized
 workspace. Defaults to Docker mode, supports per-run snapshots, custom network
-allowlists at the project level, and skips cleanup when requested. Accepts either a Codex access
-token or a ChatGPT session bundle for authentication.
+allowlists at the project level, and skips cleanup when requested. Authentication
+relies solely on a ChatGPT session bundle.
 """
 
 from __future__ import annotations
@@ -156,11 +156,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--codex-token",
-        default=os.environ.get("CODEX_ACCESS_TOKEN"),
-        help="Codex access token to register with the project (defaults to CODEX_ACCESS_TOKEN)",
-    )
-    parser.add_argument(
         "--disable-docker",
         action="store_true",
         help="Force the helper to run with RUNNER_DISABLE_DOCKER=1 (stub mode)",
@@ -238,7 +233,6 @@ def _register_project(
     *,
     gitlab_host: str,
     gitlab_project_path: str,
-    codex_token: Optional[str],
     allowlist: Optional[list[str]] = None,
 ) -> dict:
     payload = {
@@ -247,8 +241,6 @@ def _register_project(
         "gitlab_host": gitlab_host,
         "gitlab_project_path": gitlab_project_path,
     }
-    if codex_token:
-        payload["codex_token"] = codex_token
     if allowlist is not None:
         payload["allowlist"] = allowlist
     response = client.post("/projects", json=payload)
@@ -378,8 +370,6 @@ def main() -> None:
         print("Docker disabled via --disable-docker; stub runner will be used.")
     else:
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
-        if not args.codex_token and not args.session_bundle:
-            print("warning: no Codex credential supplied; task will abort before launching the real agent")
 
     try:
         scratch_dir_obj = tempfile.TemporaryDirectory()
@@ -418,6 +408,16 @@ def main() -> None:
                 f"Credential status -> GitLab PAT: {pat_flag}, ChatGPT session: {session_flag}, active: {active_kind}"
             )
 
+            if not args.disable_docker and not status_snapshot.get("session_configured"):
+                if args.expect_auth_failure:
+                    print(
+                        "warning: ChatGPT session bundle not configured; proceeding because --expect-auth-failure was set",
+                    )
+                else:
+                    raise RuntimeError(
+                        "ChatGPT session bundle not configured; provide --session-bundle or import one via Settings before running Docker tasks",
+                    )
+
             project_id: Optional[int] = args.project_id
             if args.task_id is None:
                 project_root: Optional[Path] = None
@@ -428,7 +428,6 @@ def main() -> None:
                         args.gitlab_token,
                         gitlab_host=args.gitlab_host,
                         gitlab_project_path=args.gitlab_project_path,
-                        codex_token=args.codex_token,
                         allowlist=args.allowlist,
                     )
                     project_id = project_data["id"]
@@ -462,8 +461,6 @@ def main() -> None:
                             print(f"Seeded project cache at {cache_repo}")
                 else:
                     print(f"Using existing project {project_id} for new task")
-                    if args.codex_token:
-                        print("warning: --codex-token ignored when reusing an existing project")
                     if args.allowlist is not None:
                         updated_allowlist = _update_project_allowlist(client, project_id, args.allowlist)
                         print(

@@ -15,7 +15,7 @@ type PatStatusResponse = Partial<PatStatus> & {
   session_configured?: boolean;
   session_updated_at?: string | null;
   session_updated_by?: string | null;
-  active_credential?: 'api_token' | 'session' | 'none';
+  active_credential?: 'session' | 'none';
   verification_status?: 'verified' | 'error' | null;
   verification_checked_at?: string | null;
   verification_error?: string | null;

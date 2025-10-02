@@ -214,20 +214,6 @@ function ProjectDetailPage() {
           <h3>Credential Status</h3>
           <div className="summary-list">
             <div>
-              <dt>Project Agent Token</dt>
-              <dd>
-                {detail.codex_token_configured ? (
-                  <span className="status status-done">Configured</span>
-                ) : (
-                  <span className="status status-failed">Missing</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>Token Updated At</dt>
-              <dd>{formatTimestamp(detail.codex_token_updated_at)}</dd>
-            </div>
-            <div>
               <dt>Session Bundle</dt>
               <dd>
                 {patStatus.session_configured ? (
@@ -236,6 +222,10 @@ function ProjectDetailPage() {
                   <span className="status status-failed">Not configured</span>
                 )}
               </dd>
+            </div>
+            <div>
+              <dt>Session Updated At</dt>
+              <dd>{formatTimestamp(patStatus.session_updated_at)}</dd>
             </div>
             <div>
               <dt>GitLab PAT</dt>

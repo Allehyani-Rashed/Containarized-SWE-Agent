@@ -130,7 +130,7 @@ class ProjectCrudTests(unittest.TestCase):
             self.assertEqual(latest_task["codex_model"], "gpt-5-codex")
             self.assertEqual(latest_task["codex_reasoning_effort"], "low")
 
-    def test_update_project_supports_field_changes_and_token_management(self) -> None:
+    def test_update_project_supports_field_changes(self) -> None:
         with TestClient(self.main.app) as client:
             project_id = self._create_project(client)
 
@@ -141,24 +141,18 @@ class ProjectCrudTests(unittest.TestCase):
                     "default_branch": "release",
                     "gitlab_host": "https://gitlab.example",
                     "gitlab_project_path": "example/demo",
-                    "codex_token": "sk-updated",
                     "actor": "tester",
+                    "allowlist": ["pypi.org"],
                 },
             )
             self.assertEqual(update_response.status_code, 200, update_response.text)
             payload = update_response.json()
             self.assertEqual(payload["name"], "demo-updated")
             self.assertEqual(payload["default_branch"], "release")
-            self.assertTrue(payload["codex_token_configured"])
-            self.assertIsNotNone(payload["codex_token_updated_at"])
-
-            clear_response = client.patch(
-                f"/projects/{project_id}",
-                json={"clear_codex_token": True, "actor": "tester"},
-            )
-            self.assertEqual(clear_response.status_code, 200, clear_response.text)
-            cleared = clear_response.json()
-            self.assertFalse(cleared["codex_token_configured"])
+            self.assertEqual(payload["gitlab_host"], "https://gitlab.example")
+            self.assertEqual(payload["gitlab_project_path"], "example/demo")
+            self.assertEqual(payload["allowlist"], ["pypi.org"])
+            self.assertNotIn("codex_token_configured", payload)
 
             invalid_response = client.patch(
                 f"/projects/{project_id}",

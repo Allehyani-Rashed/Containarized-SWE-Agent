@@ -7,8 +7,6 @@ export type Project = {
   gitlab_host: string;
   gitlab_project_path: string;
   created_at: string;
-  codex_token_configured: boolean;
-  codex_token_updated_at: string | null;
   repository_url: string | null;
   last_task_at: string | null;
   last_task_status: TaskStatus | null;
@@ -51,7 +49,7 @@ export type PatStatus = {
   session_configured: boolean;
   session_updated_at: string | null;
   session_updated_by: string | null;
-  active_credential: 'api_token' | 'session' | 'none';
+  active_credential: 'session' | 'none';
   verification_status: 'verified' | 'error' | null;
   verification_checked_at: string | null;
   verification_error: string | null;
@@ -105,7 +103,6 @@ export type ProjectCreatePayload = {
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
-  codex_token: string | null;
   cache_quota_mb?: number | null;
   cache_prune_after_hours?: number | null;
   allowlist: string[];
@@ -116,8 +113,6 @@ export type ProjectUpdatePayload = Partial<{
   default_branch: string;
   gitlab_host: string;
   gitlab_project_path: string;
-  codex_token: string | null;
-  clear_codex_token: boolean;
   cache_quota_mb: number | null;
   cache_prune_after_hours: number | null;
   actor: string | null;

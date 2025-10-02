@@ -105,8 +105,7 @@ class Phase2SanitizeTests(unittest.TestCase):
             project_resp = client.post("/projects", json=project_payload)
             self.assertEqual(project_resp.status_code, 201)
             project_data = project_resp.json()
-            self.assertIn("codex_token_configured", project_data)
-            self.assertFalse(project_data["codex_token_configured"])
+            self.assertNotIn("codex_token_configured", project_data)
             self.assertEqual(project_data["cache_path"], str(project_root))
             self.assertEqual(project_data["cache_status"], "ready")
 

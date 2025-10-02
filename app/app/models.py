@@ -29,8 +29,6 @@ class Project(SQLModel, table=True):
     gitlab_project_path: str
     gitlab_token: Optional[str] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=_utc_now, nullable=False)
-    codex_token_encrypted: Optional[str] = Field(default=None, nullable=True)
-    codex_token_updated_at: Optional[datetime] = Field(default=None, nullable=True)
     cache_quota_mb: Optional[int] = Field(default=None, nullable=True)
     cache_prune_after_hours: Optional[int] = Field(default=None, nullable=True)
     allowlist: list[str] = Field(

@@ -16,7 +16,6 @@ class ProjectBase(SQLModel):
 
 
 class ProjectCreate(ProjectBase):
-    codex_token: Optional[str] = None
     cache_quota_mb: Optional[int] = None
     cache_prune_after_hours: Optional[int] = None
     allowlist: List[str] = Field(default_factory=list)
@@ -25,8 +24,6 @@ class ProjectCreate(ProjectBase):
 class ProjectRead(ProjectBase):
     id: int
     created_at: datetime
-    codex_token_configured: bool
-    codex_token_updated_at: Optional[datetime]
     repository_url: Optional[str] = None
     last_task_at: Optional[datetime] = None
     last_task_status: Optional[TaskStatus] = None
@@ -46,8 +43,6 @@ class ProjectUpdate(SQLModel):
     default_branch: Optional[str] = None
     gitlab_host: Optional[str] = None
     gitlab_project_path: Optional[str] = None
-    codex_token: Optional[str | None] = Field(default=None)
-    clear_codex_token: Optional[bool] = Field(default=None)
     actor: Optional[str] = None
     cache_quota_mb: Optional[int] = None
     cache_prune_after_hours: Optional[int] = None

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synchronise Codex credentials based on values stored in .env."""
+"""Synchronise GitLab and Codex session credentials based on values stored in .env."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Load GitLab and Codex credentials from an env file into the local database.",
+        description="Load GitLab and Codex session credentials from an env file into the local database.",
     )
     parser.add_argument(
         "--env-file",
@@ -58,19 +58,24 @@ def main() -> int:
     _set_env_vars(env_values)
     reset_secret_manager()
 
-    session_bundle_inline = env_values.get("CHATGPT_SESSION_BUNDLE")
+    if "CHATGPT_SESSION_BUNDLE" in env_values:
+        print(
+            "warning: CHATGPT_SESSION_BUNDLE is deprecated; rename it to CHATGPT_SESSION_JSON",
+            file=sys.stderr,
+        )
+
+    session_bundle_json = env_values.get("CHATGPT_SESSION_JSON")
     session_bundle_path = env_values.get("CHATGPT_SESSION_BUNDLE_PATH")
     bundle_path = Path(session_bundle_path).expanduser() if session_bundle_path else None
 
     config = EnvConfig(
         gitlab_pat=env_values.get("GITLAB_PAT"),
-        codex_token=env_values.get("CODEX_ACCESS_TOKEN"),
         project_name=env_values.get("PROJECT_NAME"),
         project_default_branch=env_values.get("PROJECT_DEFAULT_BRANCH"),
         gitlab_host=env_values.get("GITLAB_HOST"),
         gitlab_project_path=env_values.get("GITLAB_PROJECT_PATH"),
         session_bundle_path=bundle_path,
-        session_bundle_inline=session_bundle_inline,
+        session_bundle_json=session_bundle_json,
         actor=args.actor,
     )
 
@@ -89,9 +94,6 @@ def main() -> int:
         messages.append(f"Project created (id={result.project_id})")
     elif result.project_updated:
         messages.append(f"Project updated (id={result.project_id})")
-    if result.codex_token_updated and not result.project_created:
-        messages.append("Codex token refreshed")
-
     if messages:
         print("; ".join(messages))
     else:
