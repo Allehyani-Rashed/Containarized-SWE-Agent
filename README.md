@@ -12,7 +12,8 @@ A local-first playground for the Codex runner: give it a prompt, it sanitizes yo
 ## Before You Start
 - Docker Engine ≥ 26 with Compose v2.24.
 - Python 3.11.x, Node.js 22.x, npm 10.x, Git ≥ 2.44.
-- A `.env` file based on `.env.example` with your GitLab project path, PAT, Codex token (or ChatGPT bundle), and `DOCKER_HOST` socket. By default the tooling reads a session bundle from `chatgpt_session_bundle.json`; override with `CHATGPT_SESSION_BUNDLE_PATH` or inline `CHATGPT_SESSION_BUNDLE`.
+- A `.env` file based on `.env.example` with your GitLab project path, PAT, and ChatGPT session bundle plus `DOCKER_HOST` socket. By default the tooling reads a session bundle from `chatgpt_session_bundle.json`; override with `CHATGPT_SESSION_BUNDLE_PATH` or inline `CHATGPT_SESSION_JSON`.
+- (Optional) `.env.e2e.local` copied from `.env.e2e.example` when you plan to run the Playwright UI smoke test—populate it with throwaway GitLab + Codex credentials.
 
 ## First Run (about 5 minutes)
 1. Copy and edit your config:
@@ -22,9 +23,9 @@ A local-first playground for the Codex runner: give it a prompt, it sanitizes yo
    ```
 2. Bootstrap everything:
    ```bash
-   ./scripts/quickstart.sh
+   make setup
    ```
-   This builds the Docker runner, installs backend/frontend dependencies, starts the Tinyproxy sidecar, writes credentials from `.env` into the local database (PAT, Codex token, and optional ChatGPT session bundle), and clones your repository into `project-cache/<slug>/repo` when the cache is missing. The helper honours `PROJECT_CACHE_ROOT` so the entire cache tree stays under a predictable directory without asking for a local path.
+   This invokes `scripts/quickstart.sh` to build the Docker runner, install backend/frontend dependencies, start the Tinyproxy sidecar, write credentials from `.env` into the local database (PAT plus ChatGPT session bundle), and clone your repository into `project-cache/<slug>/repo` when the cache is missing. The helper honours `PROJECT_CACHE_ROOT` so the entire cache tree stays under a predictable directory without asking for a local path.
 3. Start the app servers:
    ```bash
    source .venv/bin/activate
@@ -43,8 +44,7 @@ curl -sS -X POST "$BACKEND_API_BASE/projects" \
   "name": "${PROJECT_NAME}",
   "default_branch": "${PROJECT_DEFAULT_BRANCH}",
   "gitlab_host": "${GITLAB_HOST}",
-  "gitlab_project_path": "${GITLAB_PROJECT_PATH}",
-  "codex_token": "${CODEX_ACCESS_TOKEN}"
+  "gitlab_project_path": "${GITLAB_PROJECT_PATH}"
 }
 JSON
 ```
@@ -70,6 +70,8 @@ Provide `target_branch` when you need to branch from something other than the pr
 - `make dev` – run backend + UI together.
 - `make stop` – stop dev servers and compose sidecars.
 - `make reset` – remove Codex containers, SQLite state, and sanitized workspaces.
+- `make e2e-ui` – run the Playwright UI smoke (expects `scripts/e2e_env.sh` to resolve `E2E_*` secrets or exported equivalents).
+- `make setup` – run the full quickstart bootstrap (build runner, install deps, start proxy).
 - `python3 scripts/test_docker_path.py --disable-docker` – quick smoke test of the workflow.
 - `make threat-scan` – verifies container guardrails and breakout probes.
 - `scripts/codex pat store|clear|import-chatgpt` – manage GitLab PATs or Codex session bundles.
@@ -84,6 +86,18 @@ Provide `target_branch` when you need to branch from something other than the pr
 - The project cache is rewound to the task's base branch before each run. Switching between `main` and, say, `release` reuses the existing clone and only performs a fetch/reset for the requested branch.
 - Use `python3 scripts/migrate_projectsanitize.py [path]` to rename legacy `.codexignore` files; the helper merges entries so sanitized workspaces stay lean.
 - Threat model details and hardening expectations live in `THREAT_MODEL.md`.
+
+## UI E2E Smoke Test
+1. Copy the Playwright secret template and fill in throwaway credentials:
+   ```bash
+   cp .env.e2e.example .env.e2e.local
+   # add GitLab PAT, session bundle, repo host/path, default branch
+   ```
+2. Execute the smoke:
+   ```bash
+   make e2e-ui
+   ```
+   The helper script sources `.env.e2e.local` (or exported `E2E_*` variables), masks values for confirmation, installs Playwright’s Chromium build into `.playwright/`, then launches FastAPI + Vite through `ui/playwright.config.ts`. The suite seeds `[E2E] Playwright Smoke Project` via the backend API, verifies credential banners on Submit Task, and exercises the Projects dashboard. Set `ENABLE_CI_E2E_UI=0` to skip the suite when invoking Playwright directly.
 
 ## Project Map
 - `app/` – FastAPI orchestrator and API tests.

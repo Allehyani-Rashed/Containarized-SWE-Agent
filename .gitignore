@@ -10,12 +10,19 @@ venv/
 .env.*
 *.sqlite3
 *.db
+!.env.example
+!.env.e2e.example
 
 # Node
 node_modules/
 dist/
 ui/node_modules/
 ui/dist/
+
+# Playwright
+.playwright/
+ui/playwright-report/
+ui/test-results/
 
 # macOS
 .DS_Store

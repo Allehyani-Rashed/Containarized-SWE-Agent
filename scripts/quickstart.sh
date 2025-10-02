@@ -10,6 +10,7 @@ PROJECT_CACHE_LAST_PATH=""
 usage() {
   cat <<'USAGE'
 Usage: ./scripts/quickstart.sh [command]
+       make setup
 
 Commands:
   setup   (default) build images, install dependencies, and start the proxy sidecar
