@@ -928,10 +928,14 @@ def list_tasks(
     statuses: str | None = Query(default=None, description="Comma-separated list of task statuses to include"),
     codex_model: str | None = Query(default=None, description="Filter by Codex model identifier"),
     branch: str | None = Query(default=None, description="Case-insensitive substring match on branch name"),
+    project_id: int | None = Query(default=None, ge=1, description="Filter by project ID"),
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of tasks to return"),
     offset: int = Query(default=0, ge=0, description="Number of matching tasks to skip"),
 ) -> TaskListResponse:
     filters = []
+
+    if project_id is not None:
+        filters.append(Task.project_id == project_id)
 
     if statuses:
         candidates = [value.strip() for value in statuses.split(",") if value.strip()]

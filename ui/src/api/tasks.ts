@@ -5,6 +5,7 @@ export type TaskListParams = {
   statuses?: TaskStatus[];
   codexModel?: string;
   branch?: string;
+  projectId?: number;
   limit?: number;
   offset?: number;
 };
@@ -20,6 +21,9 @@ export function listTasks(params: TaskListParams = {}): Promise<TaskListResponse
   }
   if (params.branch) {
     search.set('branch', params.branch);
+  }
+  if (typeof params.projectId === 'number') {
+    search.set('project_id', String(params.projectId));
   }
   if (typeof params.limit === 'number') {
     search.set('limit', String(params.limit));
