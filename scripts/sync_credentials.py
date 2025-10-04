@@ -37,9 +37,7 @@ def _parse_args() -> argparse.Namespace:
 
 def _set_env_vars(values: Dict[str, str]) -> None:
     for key, value in values.items():
-        if key == "APP_SECRET_KEY" and value:
-            os.environ[key] = value
-        elif key not in os.environ:
+        if key not in os.environ:
             os.environ[key] = value
 
 
@@ -52,11 +50,9 @@ def main() -> int:
 
     # Defer heavy imports until after env vars are populated.
     from app.app.env_sync import EnvConfig, EnvSyncError, parse_env_file, sync_credentials
-    from app.app.secrets import reset_secret_manager
 
     env_values = parse_env_file(env_file)
     _set_env_vars(env_values)
-    reset_secret_manager()
 
     if "CHATGPT_SESSION_BUNDLE" in env_values:
         print(

@@ -1,4 +1,3 @@
-import base64
 import os
 import sys
 import tempfile
@@ -12,9 +11,6 @@ class ProjectCacheScriptTests(unittest.TestCase):
         self.tmp_dir = tempfile.TemporaryDirectory()
         db_path = Path(self.tmp_dir.name) / "cache-script.db"
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{db_path}"
-        os.environ["APP_SECRET_KEY"] = base64.urlsafe_b64encode(
-            b"env-sync-secret-key-32-bytes-ABC",
-        ).decode()
         os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
 
         for module in list(sys.modules.keys()):
@@ -33,7 +29,6 @@ class ProjectCacheScriptTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
-        os.environ.pop("APP_SECRET_KEY", None)
         os.environ.pop("PROJECT_CACHE_ROOT", None)
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):

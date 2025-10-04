@@ -1,4 +1,3 @@
-import base64
 import os
 import sys
 import tempfile
@@ -236,31 +235,34 @@ class PatLifecycleTests(unittest.TestCase):
             rotate_resp = client.post("/integrations/pat", json={"token": "gitlab-token"})
             self.assertEqual(rotate_resp.status_code, 200)
 
+            from sqlmodel import Session, select
+
+            from app.app.database import engine
+            from app.app.integrations import GITLAB_PAT_KIND
+            from app.app.models import IntegrationCredential
             from app.app.secrets import reset_secret_manager
 
-            original_key = os.environ.get("APP_SECRET_KEY")
-            try:
-                new_material = base64.urlsafe_b64encode(b"z" * 32).decode("utf-8")
-                os.environ["APP_SECRET_KEY"] = new_material
-                reset_secret_manager()
+            with Session(engine) as session:
+                credential = session.exec(
+                    select(IntegrationCredential).where(IntegrationCredential.kind == GITLAB_PAT_KIND)
+                ).one()
+                credential.token_encrypted = "not-a-valid-token"
+                session.add(credential)
+                session.commit()
 
-                verify_resp = client.post("/integrations/pat/verify")
-                self.assertEqual(verify_resp.status_code, 400)
-                detail = verify_resp.json().get("detail", "")
-                self.assertIn("could not be decrypted", detail)
+            reset_secret_manager()
 
-                status_resp = client.get("/integrations/pat")
-                self.assertEqual(status_resp.status_code, 200)
-                status_payload = status_resp.json()
-                self.assertFalse(status_payload["configured"])
-                self.assertEqual(status_payload["verification_status"], "error")
-                self.assertIn("could not be decrypted", status_payload["verification_error"] or "")
-            finally:
-                if original_key is None:
-                    os.environ.pop("APP_SECRET_KEY", None)
-                else:
-                    os.environ["APP_SECRET_KEY"] = original_key
-                reset_secret_manager()
+            verify_resp = client.post("/integrations/pat/verify")
+            self.assertEqual(verify_resp.status_code, 400)
+            detail = verify_resp.json().get("detail", "")
+            self.assertIn("could not be decrypted", detail)
+
+            status_resp = client.get("/integrations/pat")
+            self.assertEqual(status_resp.status_code, 200)
+            status_payload = status_resp.json()
+            self.assertFalse(status_payload["configured"])
+            self.assertEqual(status_payload["verification_status"], "error")
+            self.assertIn("could not be decrypted", status_payload["verification_error"] or "")
 
 
 if __name__ == "__main__":

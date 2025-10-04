@@ -82,6 +82,7 @@ Provide `target_branch` when you need to branch from something other than the pr
 - The runner bundles the real Codex CLI. Skip installation only if you deliberately set `CODEX_ALLOW_STUB=1`.
 - Large build artefacts can bloat sanitized workspaces—prune with `git clean -fdx` or update `.projectsanitize` (legacy `.codexignore`) before long runs.
 - Cache issues are resolved from the deterministic clone under `project-cache/<slug>/repo`; run `scripts/project_cache.py --refresh` (optionally with `--project-id`) to rebuild it instead of editing `.env` or exporting legacy path variables.
+- Secret storage intentionally uses a shared static Fernet key for local-only setups; replace it with an environment-sourced secret before any shared or cloud deployment.
 - Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, base branch, Codex model, and whether an abort was requested so operator tooling can annotate history without another API call.
 - The project cache is rewound to the task's base branch before each run. Switching between `main` and, say, `release` reuses the existing clone and only performs a fetch/reset for the requested branch.
 - Use `python3 scripts/migrate_projectsanitize.py [path]` to rename legacy `.codexignore` files; the helper merges entries so sanitized workspaces stay lean.

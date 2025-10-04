@@ -1,47 +1,30 @@
 from __future__ import annotations
 
-import base64
-import logging
-import os
-from typing import Optional
-
 from cryptography.fernet import Fernet, InvalidToken
-
-logger = logging.getLogger(__name__)
-
-_DEFAULT_KEY_MATERIAL = b"codex-local-fernet-secret-key-32"
-DEFAULT_SECRET_KEY = base64.urlsafe_b64encode(_DEFAULT_KEY_MATERIAL)
-SECRET_ENV_VAR = "APP_SECRET_KEY"
 
 
 class SecretError(RuntimeError):
     """Raised when encryption/decryption operations fail."""
 
 
-def _normalize_key(raw_key: Optional[str]) -> bytes:
-    if raw_key:
-        candidate = raw_key.strip()
-        try:
-            # Fernet expects a urlsafe base64-encoded key; this validates the format.
-            Fernet(candidate)
-            return candidate.encode("utf-8")
-        except (ValueError, TypeError):
-            try:
-                decoded = base64.urlsafe_b64decode(candidate)
-            except Exception as exc:  # noqa: BLE001 - propagate validation failure
-                raise SecretError(
-                    "APP_SECRET_KEY must be a urlsafe base64 encoded 32 byte key",
-                ) from exc
-            if len(decoded) != 32:
-                raise SecretError("APP_SECRET_KEY must decode to 32 bytes")
-            return base64.urlsafe_b64encode(decoded)
-    logger.warning("APP_SECRET_KEY not set; using built-in development key")
-    return DEFAULT_SECRET_KEY
+# NOTE: Local-only personal builds rely on a shared static key so secrets
+# remain decryptable across restarts without extra configuration.
+# TODO(cloud-hardening): Replace this with an environment-sourced key before
+# any shared or cloud deployment.
+_STATIC_FERNET_KEY = "5uTQNPgdEuCG1Nhs3uFGPaROHyBcXPyF7K6dAz_IW00="
+
+
+def _normalized_static_key() -> bytes:
+    try:
+        Fernet(_STATIC_FERNET_KEY)
+    except (ValueError, TypeError) as exc:  # pragma: no cover - guarded constant
+        raise SecretError("Configured static Fernet key is invalid") from exc
+    return _STATIC_FERNET_KEY.encode("utf-8")
 
 
 class SecretManager:
     def __init__(self) -> None:
-        key = _normalize_key(os.getenv(SECRET_ENV_VAR))
+        key = _normalized_static_key()
         self._fernet = Fernet(key)
 
     def encrypt(self, plaintext: str) -> str:

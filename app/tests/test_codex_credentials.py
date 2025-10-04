@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import shutil
@@ -19,8 +18,6 @@ class CodexCredentialTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp_dir = tempfile.TemporaryDirectory()
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'creds.db'}"
-        key_material = base64.urlsafe_b64encode(b"test-secret-fernet-key-for-cdx!!").decode("utf-8")
-        os.environ["APP_SECRET_KEY"] = key_material
         os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
@@ -42,7 +39,6 @@ class CodexCredentialTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
-        os.environ.pop("APP_SECRET_KEY", None)
         os.environ.pop("PROJECT_CACHE_ROOT", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         self.secrets.reset_secret_manager()
