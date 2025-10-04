@@ -23,6 +23,7 @@ ui/dist/
 .playwright/
 ui/playwright-report/
 ui/test-results/
+*.png
 
 # macOS
 .DS_Store

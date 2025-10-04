@@ -1,0 +1,404 @@
+/* Settings Page Layout */
+
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 0;
+}
+
+.settings-layout:has(> .settings-sidebar) {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 2rem;
+}
+
+.settings-layout:has(> .settings-sidebar) .settings-sidebar {
+  grid-column: 1;
+}
+
+.settings-section-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem 0;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.settings-section-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #f9fafb;
+}
+
+.settings-section-intro p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(226, 232, 240, 0.85);
+  max-width: 420px;
+}
+
+/* Sidebar */
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.sidebar-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin-bottom: 0.5rem;
+}
+
+.credential-panel-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin-bottom: 0.75rem;
+}
+
+/* Main Content */
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Credential Card Headers */
+.credential-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.credential-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 0.75rem;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.credential-card-icon-orange {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+.credential-card-icon-green {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}
+
+.credential-card-header h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin: 0;
+}
+
+/* Credential Forms */
+.credential-form {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* Button Groups */
+.button-group {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+/* File Upload */
+.file-upload-group {
+  margin-bottom: 1rem;
+}
+
+.file-upload-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.file-upload-label > span:first-child {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #f9fafb;
+}
+
+.file-upload-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-upload-label {
+  position: relative;
+}
+
+.file-upload-button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background-color: #2d3748;
+  color: #f9fafb;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.file-upload-button:hover {
+  background-color: #334155;
+  border-color: rgba(96, 165, 250, 0.6);
+}
+
+.file-upload-name {
+  display: inline-block;
+  margin-left: 0.75rem;
+  font-size: 0.875rem;
+  color: #d1d5db;
+}
+
+.file-hint {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 0.25rem;
+}
+
+/* CLI Commands Section */
+.cli-commands {
+  margin: 1.25rem 0;
+  padding: 1rem;
+  background-color: rgba(15, 23, 42, 0.7);
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+}
+
+.cli-commands h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin-bottom: 0.75rem;
+}
+
+.cli-commands pre {
+  margin: 0.5rem 0;
+  padding: 0.75rem;
+  background-color: rgba(15, 23, 42, 0.9);
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  overflow-x: auto;
+}
+
+.cli-commands code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  color: #d1d5db;
+  background: transparent;
+  padding: 0;
+}
+
+/* Error Detail */
+.error-detail {
+  margin-top: 0.5rem;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  background-color: rgba(0, 0, 0, 0.2);
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+}
+
+/* Responsive Layout */
+@media (max-width: 1024px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-sidebar {
+    order: 2;
+  }
+
+  .settings-main {
+    order: 1;
+  }
+}
+
+@media (max-width: 768px) {
+  .button-group {
+    flex-direction: column;
+  }
+
+  .button-group .btn {
+    width: 100%;
+  }
+
+  .credential-card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  /* Accordion adjustments for mobile */
+  .accordion-header-content {
+    gap: 0.75rem;
+  }
+
+  .accordion-icon {
+    width: 40px;
+    height: 40px;
+  }
+
+  .accordion-title-section h3 {
+    font-size: 1rem;
+  }
+
+  .accordion-summary {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .accordion-summary-text {
+    font-size: 0.8125rem;
+  }
+}
+
+/* Spacing adjustments for InfoPanel in Settings */
+.settings-main .info-panel {
+  margin-top: 1rem;
+}
+
+.settings-main .info-panel + .info-panel {
+  margin-top: 0.75rem;
+}
+
+/* Accordion Styles */
+.accordion-section {
+  margin-bottom: 1.5rem;
+}
+
+.accordion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  transition: opacity 150ms ease;
+}
+
+.accordion-header:hover {
+  opacity: 0.8;
+}
+
+.accordion-header:focus {
+  outline: 2px solid rgba(96, 165, 250, 0.5);
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.accordion-header-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.accordion-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 0.75rem;
+  flex-shrink: 0;
+}
+
+.accordion-title-section {
+  flex: 1;
+  min-width: 0;
+}
+
+.accordion-title-section h3 {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #f9fafb;
+  margin: 0 0 0.5rem 0;
+}
+
+.accordion-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.accordion-summary-text {
+  font-size: 0.875rem;
+  color: #9ca3af;
+}
+
+.accordion-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #9ca3af;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+}
+
+.accordion-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+.accordion-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.accordion-content.expanded {
+  grid-template-rows: 1fr;
+}
+
+.accordion-content-inner {
+  min-height: 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+  margin-top: 1rem;
+}
+
+/* Adjust existing credential icon colors for accordion */
+.accordion-icon.credential-card-icon-orange {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+.accordion-icon.credential-card-icon-green {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10b981;
+}

@@ -18,6 +18,9 @@ import {
 } from '../types';
 import { formatTimestamp } from '../utils/time';
 import { usePatStatus } from '../hooks/usePatStatus';
+import EmptyState from '../components/EmptyState';
+import Skeleton from '../components/Skeleton';
+import './ProjectsPage.css';
 
 type ProjectFormState = {
   name: string;
@@ -172,6 +175,10 @@ function ProjectsPage() {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [retrying, setRetrying] = useState(false);
 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [hostFilter, setHostFilter] = useState('');
+  const [cacheStatusFilter, setCacheStatusFilter] = useState('');
+
   useEffect(() => {
     if (!editingProject) {
       setEditForm(initialFormState);
@@ -182,8 +189,43 @@ function ProjectsPage() {
   const { status: patStatus, error: patStatusError, refresh: refreshPatStatus, clearError: clearPatStatusError } =
     usePatStatus();
 
+  const uniqueHosts = useMemo(() => {
+    const hosts = new Set(projects.map((p) => p.gitlab_host).filter(Boolean));
+    return Array.from(hosts).sort();
+  }, [projects]);
+
+  const uniqueCacheStatuses = useMemo(() => {
+    const statuses = new Set(projects.map((p) => p.cache_status).filter(Boolean));
+    return Array.from(statuses).sort();
+  }, [projects]);
+
+  const filteredProjects = useMemo(() => {
+    let result = [...projects];
+
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      result = result.filter(
+        (project) =>
+          project.name.toLowerCase().includes(query) ||
+          (project.repository_url && project.repository_url.toLowerCase().includes(query)) ||
+          (project.gitlab_project_path && project.gitlab_project_path.toLowerCase().includes(query)) ||
+          (project.gitlab_host && project.gitlab_host.toLowerCase().includes(query))
+      );
+    }
+
+    if (hostFilter) {
+      result = result.filter((project) => project.gitlab_host === hostFilter);
+    }
+
+    if (cacheStatusFilter) {
+      result = result.filter((project) => project.cache_status === cacheStatusFilter);
+    }
+
+    return result;
+  }, [projects, searchQuery, hostFilter, cacheStatusFilter]);
+
   const sortedProjects = useMemo(() => {
-    const items = [...projects];
+    const items = [...filteredProjects];
     const multiplier = sortDirection === 'asc' ? 1 : -1;
 
     items.sort((a, b) => {
@@ -220,7 +262,7 @@ function ProjectsPage() {
     });
 
     return items;
-  }, [projects, sortDirection, sortKey]);
+  }, [filteredProjects, sortDirection, sortKey]);
 
   const combinedError = pageError || projectsError || patStatusError;
 
@@ -456,6 +498,14 @@ function ProjectsPage() {
     }
   };
 
+  const hasActiveFilters = searchQuery || hostFilter || cacheStatusFilter;
+
+  const clearFilters = () => {
+    setSearchQuery('');
+    setHostFilter('');
+    setCacheStatusFilter('');
+  };
+
   const renderCredentialBadge = () => {
     if (patStatus.session_configured) {
       return (
@@ -540,11 +590,6 @@ function ProjectsPage() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <h2>Projects</h2>
-        <p>Register repositories, inspect recent activity, and manage runner credentials.</p>
-      </header>
-
       {combinedError ? (
         <div className="error-banner">
           <span>{combinedError}</span>
@@ -618,7 +663,7 @@ function ProjectsPage() {
               placeholder={'.example.com\nregistry.npmjs.org'}
               rows={3}
             />
-            <p className="field-hint">Enter one domain per line (commas also supported). Leave blank to use only the default deny list.</p>
+            <p className="field-hint">Enter one domain per line (commas also supported). Leave blank to use only the default allow list.</p>
           </label>
           <div className="field-grid">
             <label>
@@ -657,110 +702,207 @@ function ProjectsPage() {
 
         <div className="panel">
           <h3>Project Overview</h3>
+
+          {projects.length > 0 && (
+            <div className="filter-section">
+              <div className="filter-grid">
+                <div className="filter-search">
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Search by name, repository, or host..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <div className="filter-controls">
+                  <select
+                    className="select"
+                    value={hostFilter}
+                    onChange={(e) => setHostFilter(e.target.value)}
+                  >
+                    <option value="">All Hosts</option>
+                    {uniqueHosts.map((host) => (
+                      <option key={host} value={host}>
+                        {host}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className="select"
+                    value={cacheStatusFilter}
+                    onChange={(e) => setCacheStatusFilter(e.target.value)}
+                  >
+                    <option value="">All Cache Statuses</option>
+                    {uniqueCacheStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </option>
+                    ))}
+                  </select>
+                  {hasActiveFilters && (
+                    <button type="button" className="ghost-button" onClick={clearFilters}>
+                      Clear Filters
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="filter-results">
+                <span className="meta">
+                  Showing {sortedProjects.length} of {projects.length} project{projects.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="table-wrapper">
-            {projects.length === 0 ? (
-              <p className="empty">{isLoading ? 'Loading projects…' : 'No projects registered yet.'}</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th {...sortableHeaderProps('name')}>
-                      Name{sortIndicator('name')}
-                    </th>
-                    <th>Repository</th>
-                    <th>Cache</th>
-                    <th {...sortableHeaderProps('gitlab_host')}>
-                      Host{sortIndicator('gitlab_host')}
-                    </th>
-                    <th {...sortableHeaderProps('default_branch')}>
-                      Default Branch{sortIndicator('default_branch')}
-                    </th>
-                    <th {...sortableHeaderProps('allowlist_status')}>
-                      Allowlist{sortIndicator('allowlist_status')}
-                    </th>
-                    <th>Credentials</th>
-                    <th {...sortableHeaderProps('last_task_at')}>
-                      Last Activity{sortIndicator('last_task_at')}
-                    </th>
-                    <th {...sortableHeaderProps('active_task_count')}>
-                      Active Tasks{sortIndicator('active_task_count')}
-                    </th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedProjects.map((project) => (
-                    <tr key={project.id}>
-                      <td>{project.name}</td>
-                      <td>
-                        {project.repository_url ? (
-                          <a href={project.repository_url} target="_blank" rel="noreferrer">
-                            {project.repository_url}
-                          </a>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>{renderCacheCell(project)}</td>
-                      <td>{project.gitlab_host || '—'}</td>
-                      <td>{project.default_branch}</td>
-                      <td>{renderAllowlistBadge(project.allowlist_status)}</td>
-                      <td>{renderCredentialBadge()}</td>
-                      <td>
-                        {project.last_task_at ? (
-                          <div className="table-status">
-                            <span className={`status status-${project.last_task_status ?? 'pending'}`}>
-                              {project.last_task_status ?? 'unknown'}
-                            </span>
-                            <div className="meta">{formatTimestamp(project.last_task_at)}</div>
-                          </div>
-                        ) : (
-                          <span className="meta">No tasks yet</span>
-                        )}
-                      </td>
-                      <td>{project.active_task_count}</td>
-                      <td>
-                        <div className="button-row">
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => navigate(`/projects/${project.id}`)}
-                          >
-                            View
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => handleEditSelect(project)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => copyRefreshCommand(project)}
-                          >
-                            Copy Refresh CLI
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={() => handleDelete(project)}
-                            disabled={project.active_task_count > 0}
-                            title={
-                              project.active_task_count > 0
-                                ? 'Abort or complete active tasks before deleting'
-                                : undefined
-                            }
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
+            {isLoading ? (
+              <div className="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="sticky-column">Name</th>
+                      <th className="hide-tablet">Repository</th>
+                      <th className="hide-tablet">Cache</th>
+                      <th className="hide-mobile">Host</th>
+                      <th className="hide-tablet">Default Branch</th>
+                      <th className="hide-tablet">Allowlist</th>
+                      <th className="hide-mobile">Credentials</th>
+                      <th>Last Activity</th>
+                      <th className="hide-mobile">Active Tasks</th>
+                      <th>Actions</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {Array.from({ length: 3 }).map((_, rowIndex) => (
+                      <tr key={`skeleton-${rowIndex}`}>
+                        {Array.from({ length: 10 }).map((__, cellIndex) => (
+                          <td key={cellIndex}>
+                            <Skeleton variant="text" width={`${Math.max(40, 90 - cellIndex * 5)}%`} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : projects.length === 0 ? (
+              <EmptyState
+                icon="folder"
+                title="No projects registered"
+                description="Register your first project above to start running AI agent tasks. Projects connect your GitLab repositories to the Codex runner."
+              />
+            ) : sortedProjects.length === 0 ? (
+              <EmptyState
+                icon="alert"
+                title="No matching projects"
+                description="No projects match your current search and filter criteria. Try adjusting your filters or clearing them to see all projects."
+                actionLabel="Clear Filters"
+                onAction={clearFilters}
+              />
+            ) : (
+              <div className="table-responsive">
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="sticky-column" {...sortableHeaderProps('name')}>
+                        Name{sortIndicator('name')}
+                      </th>
+                      <th className="hide-tablet">Repository</th>
+                      <th className="hide-tablet">Cache</th>
+                      <th className="hide-mobile" {...sortableHeaderProps('gitlab_host')}>
+                        Host{sortIndicator('gitlab_host')}
+                      </th>
+                      <th className="hide-tablet" {...sortableHeaderProps('default_branch')}>
+                        Default Branch{sortIndicator('default_branch')}
+                      </th>
+                      <th className="hide-tablet" {...sortableHeaderProps('allowlist_status')}>
+                        Allowlist{sortIndicator('allowlist_status')}
+                      </th>
+                      <th className="hide-mobile">Credentials</th>
+                      <th {...sortableHeaderProps('last_task_at')}>
+                        Last Activity{sortIndicator('last_task_at')}
+                      </th>
+                      <th className="hide-mobile" {...sortableHeaderProps('active_task_count')}>
+                        Active Tasks{sortIndicator('active_task_count')}
+                      </th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedProjects.map((project) => (
+                      <tr key={project.id}>
+                        <td className="sticky-column">{project.name}</td>
+                        <td className="hide-tablet">
+                          {project.repository_url ? (
+                            <a href={project.repository_url} target="_blank" rel="noreferrer">
+                              {project.repository_url}
+                            </a>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td className="hide-tablet">{renderCacheCell(project)}</td>
+                        <td className="hide-mobile">{project.gitlab_host || '—'}</td>
+                        <td className="hide-tablet">{project.default_branch}</td>
+                        <td className="hide-tablet">{renderAllowlistBadge(project.allowlist_status)}</td>
+                        <td className="hide-mobile">{renderCredentialBadge()}</td>
+                        <td>
+                          {project.last_task_at ? (
+                            <div className="table-status">
+                              <span className={`status status-${project.last_task_status ?? 'pending'}`}>
+                                {project.last_task_status ?? 'unknown'}
+                              </span>
+                              <div className="meta">{formatTimestamp(project.last_task_at)}</div>
+                            </div>
+                          ) : (
+                            <span className="meta">No tasks yet</span>
+                          )}
+                        </td>
+                        <td className="hide-mobile">{project.active_task_count}</td>
+                        <td>
+                          <div className="button-row">
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => navigate(`/projects/${project.id}`)}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleEditSelect(project)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => copyRefreshCommand(project)}
+                            >
+                              Copy Refresh CLI
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={() => handleDelete(project)}
+                              disabled={project.active_task_count > 0}
+                              title={
+                                project.active_task_count > 0
+                                  ? 'Abort or complete active tasks before deleting'
+                                  : undefined
+                              }
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </div>

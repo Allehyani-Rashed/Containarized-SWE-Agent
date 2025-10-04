@@ -6,6 +6,9 @@ import { Project, Task, CodexModel, TaskStatus } from '../types';
 import { formatTimestamp } from '../utils/time';
 import { useProjects } from '../hooks/useProjectsData';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import EmptyState from '../components/EmptyState';
+import Icon from '../components/Icon';
+import Skeleton from '../components/Skeleton';
 
 const orderTasks = (items: Task[]) => {
   return [...items].sort((a, b) => {
@@ -76,6 +79,8 @@ function TaskListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [models, setModels] = useState<CodexModel[]>([]);
+  const [quickActionLoading, setQuickActionLoading] = useState<number | null>(null);
+  const [confirmQuickAbort, setConfirmQuickAbort] = useState<number | null>(null);
 
   const logContainerRef = useRef<HTMLPreElement | null>(null);
   const copyResetRef = useRef<number | null>(null);
@@ -635,6 +640,45 @@ function TaskListPage() {
     }
   };
 
+  const handleQuickAbort = async (taskId: number) => {
+    setQuickActionLoading(taskId);
+    try {
+      await abortTask(taskId);
+      await fetchTasks('refresh');
+      setConfirmQuickAbort(null);
+    } catch (apiError) {
+      setError(apiError instanceof Error ? apiError.message : 'Failed to abort task');
+    } finally {
+      setQuickActionLoading(null);
+    }
+  };
+
+  const handleQuickRetry = (task: Task) => {
+    // Navigate to submit page with pre-filled form data
+    const submitState = {
+      projectId: task.project_id,
+      prompt: task.prompt,
+      targetBranch: task.target_branch || '',
+      codexModel: task.codex_model || '',
+      codexReasoningEffort: task.codex_reasoning_effort || 'medium',
+      mrTitle: task.mr_title || '',
+    };
+    navigate('/', { state: submitState });
+  };
+
+  const handleQuickClone = (task: Task) => {
+    // Navigate to submit page with pre-filled form data
+    const submitState = {
+      projectId: task.project_id,
+      prompt: task.prompt,
+      targetBranch: task.target_branch || '',
+      codexModel: task.codex_model || '',
+      codexReasoningEffort: task.codex_reasoning_effort || 'medium',
+      mrTitle: task.mr_title || '',
+    };
+    navigate('/', { state: submitState });
+  };
+
   const filtersApplied = Boolean(filters.branch) || Boolean(filters.codexModel) || filters.statuses.length > 0;
   const filterDraftMatchesApplied =
     filterDraft.codexModel === filters.codexModel &&
@@ -658,11 +702,6 @@ function TaskListPage() {
 
   return (
     <div className="page">
-      <header className="page-header">
-        <h2>Tasks</h2>
-        <p>Inspect task history, monitor logs, and launch quick follow-up jobs.</p>
-      </header>
-
       {combinedError && <div className="error-banner" role="alert">{combinedError}</div>}
 
       <section className="panel">
@@ -733,7 +772,8 @@ function TaskListPage() {
         </div>
         <div className="table-wrapper">
           {isLoading ? (
-            <table className="task-table task-table-skeleton" aria-hidden="true">
+            <div className="table-responsive">
+              <table className="task-table task-table-skeleton" aria-hidden="true">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -747,80 +787,151 @@ function TaskListPage() {
                   <th>Branch</th>
                   <th>Base Branch</th>
                   <th>Merge Request</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {Array.from({ length: skeletonRowCount }).map((_, rowIndex) => (
                   <tr key={`skeleton-${rowIndex}`}>
-                    {Array.from({ length: 11 }).map((__, cellIndex) => (
+                    {Array.from({ length: 12 }).map((__, cellIndex) => (
                       <td key={cellIndex}>
-                        <span
-                          className="skeleton skeleton-text"
-                          style={{ width: `${Math.max(32, 85 - cellIndex * 6)}%` }}
-                        />
+                        <Skeleton variant="text" width={`${Math.max(32, 85 - cellIndex * 6)}%`} />
                       </td>
                     ))}
                   </tr>
                 ))}
               </tbody>
-            </table>
+              </table>
+            </div>
           ) : tasks.length === 0 ? (
-            <p className="empty">
-              {filtersApplied ? 'No tasks match your filters.' : 'No tasks submitted yet.'}
-            </p>
+            filtersApplied ? (
+              <EmptyState
+                icon="alert"
+                title="No matching tasks"
+                description="No tasks match your current filters. Try adjusting your filter criteria or clearing filters to see all tasks."
+                actionLabel="Clear Filters"
+                onAction={handleFilterReset}
+              />
+            ) : (
+              <EmptyState
+                icon="clipboard"
+                title="No tasks yet"
+                description="Submit your first task to get started with AI-powered development"
+                actionLabel="Create Task"
+                onAction={() => navigate('/')}
+              />
+            )
           ) : (
             <>
-              <table className="task-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Project</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Finished</th>
-                  <th>Agent Invocation</th>
-                  <th>Model</th>
-                  <th>Reasoning</th>
-                  <th>Branch</th>
-                  <th>Base Branch</th>
-                  <th>Merge Request</th>
-                </tr>
-              </thead>
+              <div className="table-responsive">
+                <table className="task-table">
+                  <thead>
+                    <tr>
+                      <th className="sticky-column">ID</th>
+                      <th>Project</th>
+                      <th>Status</th>
+                      <th>Created</th>
+                      <th className="hide-mobile">Finished</th>
+                      <th className="hide-tablet">Agent Invocation</th>
+                      <th className="hide-mobile">Model</th>
+                      <th className="hide-tablet">Reasoning</th>
+                      <th className="hide-tablet">Branch</th>
+                      <th className="hide-tablet">Base Branch</th>
+                      <th className="hide-mobile">Merge Request</th>
+                      <th className="task-actions-header">Actions</th>
+                    </tr>
+                  </thead>
               <tbody>
                 {tasks.map((task) => {
                     const projectName = projectMap.get(task.project_id)?.name ?? String(task.project_id);
+                    const canAbort = ['pending', 'running'].includes(task.status);
+                    const canRetry = task.status === 'failed';
+                    const isLoadingThis = quickActionLoading === task.id;
+
                     return (
                       <tr
                         key={task.id}
                         className={selectedTaskId === task.id ? 'active' : ''}
-                        onClick={() => handleTaskSelect(task)}
                       >
-                        <td>{task.id}</td>
-                        <td>{projectName}</td>
-                        <td>
+                        <td className="sticky-column" onClick={() => handleTaskSelect(task)}>{task.id}</td>
+                        <td onClick={() => handleTaskSelect(task)}>{projectName}</td>
+                        <td onClick={() => handleTaskSelect(task)}>
                           <span className={`status status-${task.status}`}>{task.status}</span>
                         </td>
-                        <td>{formatTimestamp(task.created_at)}</td>
-                        <td>{formatTimestamp(task.finished_at)}</td>
-                        <td>{task.codex_invocation ?? '--'}</td>
-                        <td>{task.codex_model ?? '--'}</td>
-                        <td>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
-                        <td>{task.branch ?? '--'}</td>
-                        <td>{task.target_branch ?? '--'}</td>
-                        <td>
+                        <td onClick={() => handleTaskSelect(task)}>{formatTimestamp(task.created_at)}</td>
+                        <td className="hide-mobile" onClick={() => handleTaskSelect(task)}>{formatTimestamp(task.finished_at)}</td>
+                        <td className="hide-tablet" onClick={() => handleTaskSelect(task)}>{task.codex_invocation ?? '--'}</td>
+                        <td className="hide-mobile" onClick={() => handleTaskSelect(task)}>{task.codex_model ?? '--'}</td>
+                        <td className="hide-tablet" onClick={() => handleTaskSelect(task)}>{formatReasoningEffort(task.codex_reasoning_effort)}</td>
+                        <td className="hide-tablet" onClick={() => handleTaskSelect(task)}>{task.branch ?? '--'}</td>
+                        <td className="hide-tablet" onClick={() => handleTaskSelect(task)}>{task.target_branch ?? '--'}</td>
+                        <td className="hide-mobile" onClick={() => handleTaskSelect(task)}>
                           {task.mr_url ? (
-                            <a href={task.mr_url} target="_blank" rel="noreferrer">
+                            <a href={task.mr_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
                               {task.mr_url}
                             </a>
                           ) : (
                             '--'
                           )}
                         </td>
+                        <td className="task-actions-cell" onClick={(e) => e.stopPropagation()}>
+                          <div className="task-actions">
+                            {canAbort && (
+                              <button
+                                type="button"
+                                className="action-btn action-btn-abort"
+                                onClick={() => setConfirmQuickAbort(task.id)}
+                                disabled={isLoadingThis || task.abort_requested}
+                                title="Abort task"
+                                aria-label="Abort task"
+                              >
+                                <Icon type="alert" size={16} />
+                                <span className="action-text">Abort</span>
+                              </button>
+                            )}
+                            {canRetry && (
+                              <button
+                                type="button"
+                                className="action-btn action-btn-retry"
+                                onClick={() => handleQuickRetry(task)}
+                                disabled={isLoadingThis}
+                                title="Retry with same parameters"
+                                aria-label="Retry task"
+                              >
+                                <Icon type="rotate-cw" size={16} />
+                                <span className="action-text">Retry</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="action-btn action-btn-clone"
+                              onClick={() => handleQuickClone(task)}
+                              disabled={isLoadingThis}
+                              title="Clone task with same parameters"
+                              aria-label="Clone task"
+                            >
+                              <Icon type="copy" size={16} />
+                              <span className="action-text">Clone</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="action-btn action-btn-view"
+                              onClick={() => handleTaskSelect(task)}
+                              disabled={isLoadingThis}
+                              title="View task details and logs"
+                              aria-label="View task logs"
+                            >
+                              <Icon type="eye" size={16} />
+                              <span className="action-text">View</span>
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
-              </table>
+                </table>
+              </div>
               <div className="table-footer">
                 {canLoadMore && (
                   <button
@@ -1107,6 +1218,44 @@ function TaskListPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {confirmQuickAbort && (
+        <div className="task-drawer" onClick={() => setConfirmQuickAbort(null)}>
+          <div className="task-drawer-backdrop" aria-hidden="true" />
+          <div className="drawer-modal" role="presentation" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="drawer-modal-card"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="quick-abort-title"
+              aria-describedby="quick-abort-desc"
+            >
+              <h4 id="quick-abort-title">Abort Task #{confirmQuickAbort}?</h4>
+              <p id="quick-abort-desc">
+                The runner will stop before launching or finish its current step. This cannot be undone.
+              </p>
+              <div className="drawer-modal-actions">
+                <button
+                  type="button"
+                  className="danger-button"
+                  onClick={() => handleQuickAbort(confirmQuickAbort)}
+                  disabled={quickActionLoading === confirmQuickAbort}
+                >
+                  {quickActionLoading === confirmQuickAbort ? 'Aborting...' : 'Confirm abort'}
+                </button>
+                <button
+                  type="button"
+                  className="ghost-button"
+                  onClick={() => setConfirmQuickAbort(null)}
+                  disabled={quickActionLoading === confirmQuickAbort}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

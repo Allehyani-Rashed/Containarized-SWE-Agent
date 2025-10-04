@@ -1,0 +1,272 @@
+/* Project Detail Page Styles */
+
+.project-detail-page {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Header Section */
+.project-detail-header {
+  margin-bottom: 2rem;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  background: none;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.back-link:hover {
+  color: var(--color-primary);
+}
+
+.page-title-section {
+  margin-bottom: 1.5rem;
+}
+
+.page-title-section h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.5rem 0;
+}
+
+.page-subtitle {
+  font-size: 1rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Action Buttons Row */
+.action-buttons-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Two Column Layout */
+.project-detail-layout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.left-column,
+.right-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* Section Titles */
+.section-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 1.5rem 0;
+}
+
+.subsection-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 0.75rem 0;
+}
+
+/* Allowlist Section */
+.allowlist-section {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.allowlist-domains {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin: 0;
+  word-break: break-word;
+}
+
+/* Repository Link */
+.repo-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-primary);
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.repo-link:hover {
+  opacity: 0.8;
+}
+
+.repo-link svg {
+  flex-shrink: 0;
+}
+
+/* Credential Section */
+.credential-section {
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.credential-section:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.credential-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 1rem 0;
+}
+
+/* Success Banner */
+.success-banner {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(16, 185, 129, 0.2);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  margin-top: 1.5rem;
+}
+
+.success-banner svg {
+  flex-shrink: 0;
+  color: #10b981;
+  margin-top: 2px;
+}
+
+.success-banner strong {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #10b981;
+  margin-bottom: 0.25rem;
+}
+
+.success-banner p {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* Table Styles */
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+}
+
+.table-wrapper table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.table-wrapper thead {
+  background: rgba(15, 23, 42, 0.7);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.table-wrapper th {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.025em;
+}
+
+.table-wrapper td {
+  padding: 0.75rem 1rem;
+  color: var(--color-text-primary);
+  border-top: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.table-wrapper tbody tr:hover {
+  background: var(--color-bg-hover);
+}
+
+.table-wrapper .empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* Responsive Design */
+@media (max-width: 1280px) {
+  .project-detail-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .right-column {
+    order: -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-title-section h1 {
+    font-size: 1.5rem;
+  }
+
+  .action-buttons-row {
+    flex-direction: column;
+  }
+
+  .action-buttons-row .btn {
+    width: 100%;
+  }
+
+  .table-wrapper {
+    font-size: 0.8125rem;
+  }
+
+  .table-wrapper th,
+  .table-wrapper td {
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* Info List Overrides for this page */
+.project-detail-page .info-list {
+  gap: 0.75rem;
+}
+
+.project-detail-page .info-item-label {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.project-detail-page .info-item-value {
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+}
+
+/* Empty state for credential info */
+.credential-section .info-item-label:empty {
+  display: none;
+}
+
+.credential-section .info-item-value:only-child {
+  margin-bottom: 0.5rem;
+}
