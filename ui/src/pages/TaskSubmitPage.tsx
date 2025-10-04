@@ -146,6 +146,7 @@ function TaskSubmitPage() {
       projectId?: number;
       prompt?: string;
       targetBranch?: string;
+      branchName?: string;
       codexModel?: string;
       codexReasoningEffort?: 'low' | 'medium' | 'high';
       mrTitle?: string;
@@ -165,6 +166,7 @@ function TaskSubmitPage() {
           projectId: String(state.projectId),
           prompt: state.prompt || prev.prompt,
           targetBranch: state.targetBranch || target?.default_branch || prev.targetBranch,
+          branchName: state.branchName ?? prev.branchName,
           codexModel: state.codexModel || prev.codexModel,
           codexReasoningEffort: state.codexReasoningEffort || prev.codexReasoningEffort,
           mrTitle: state.mrTitle || prev.mrTitle,

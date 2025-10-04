@@ -11,7 +11,6 @@ export type IconType =
   | 'edit'
   | 'clipboard'
   | 'folder'
-  | 'chart'
   | 'settings'
   | 'help'
   | 'rocket'
@@ -33,7 +32,13 @@ export type IconType =
   | 'chevron-right'
   | 'info-circle'
   | 'x-circle'
-  | 'check-circle';
+  | 'check-circle'
+  | 'chevron-left'
+  | 'git'
+  | 'external-link'
+  | 'plus'
+  | 'cpu'
+  | 'inbox';
 
 interface IconProps {
   type: IconType;
@@ -81,16 +86,6 @@ function Icon({ type, size = 20, className = '', style = {} }: IconProps) {
       return (
         <svg {...baseProps}>
           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-      );
-
-    case 'chart':
-      // Bar chart icon for Analytics
-      return (
-        <svg {...baseProps}>
-          <line x1="12" y1="20" x2="12" y2="10" />
-          <line x1="18" y1="20" x2="18" y2="4" />
-          <line x1="6" y1="20" x2="6" y2="16" />
         </svg>
       );
 
@@ -292,6 +287,70 @@ function Icon({ type, size = 20, className = '', style = {} }: IconProps) {
         <svg {...baseProps} viewBox="0 0 16 16" fill="currentColor" stroke="none">
           <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
           <path d="M10.97 4.97a.235.235 0 0 0-.02.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-1.071-1.05z"/>
+        </svg>
+      );
+
+    case 'chevron-left':
+      // Chevron left for back navigation
+      return (
+        <svg {...baseProps}>
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      );
+
+    case 'git':
+      // Git branch icon
+      return (
+        <svg {...baseProps}>
+          <line x1="6" y1="3" x2="6" y2="15" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+      );
+
+    case 'external-link':
+      // External link icon
+      return (
+        <svg {...baseProps}>
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+          <polyline points="15 3 21 3 21 9" />
+          <line x1="10" y1="14" x2="21" y2="3" />
+        </svg>
+      );
+
+    case 'plus':
+      // Plus icon for add/create actions
+      return (
+        <svg {...baseProps}>
+          <line x1="12" y1="5" x2="12" y2="19" />
+          <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      );
+
+    case 'cpu':
+      // CPU/processor icon for model info
+      return (
+        <svg {...baseProps}>
+          <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+          <rect x="9" y="9" width="6" height="6" />
+          <line x1="9" y1="1" x2="9" y2="4" />
+          <line x1="15" y1="1" x2="15" y2="4" />
+          <line x1="9" y1="20" x2="9" y2="23" />
+          <line x1="15" y1="20" x2="15" y2="23" />
+          <line x1="20" y1="9" x2="23" y2="9" />
+          <line x1="20" y1="14" x2="23" y2="14" />
+          <line x1="1" y1="9" x2="4" y2="9" />
+          <line x1="1" y1="14" x2="4" y2="14" />
+        </svg>
+      );
+
+    case 'inbox':
+      // Inbox icon for empty states
+      return (
+        <svg {...baseProps}>
+          <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+          <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
         </svg>
       );
 

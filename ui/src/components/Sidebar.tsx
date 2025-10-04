@@ -6,7 +6,6 @@ const navLinks: Array<{ to: string; label: string; icon: IconType }> = [
   { to: '/', label: 'Submit Task', icon: 'edit' },
   { to: '/tasks', label: 'Tasks', icon: 'clipboard' },
   { to: '/projects', label: 'Projects', icon: 'folder' },
-  { to: '/analytics', label: 'Analytics', icon: 'chart' },
   { to: '/settings', label: 'Settings', icon: 'settings' },
   { to: '/help', label: 'Help', icon: 'help' },
 ];

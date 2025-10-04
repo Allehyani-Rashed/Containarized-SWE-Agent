@@ -9,7 +9,6 @@ const pageNames: Record<string, string> = {
   '/': 'Task Submission',
   '/tasks': 'Task Management',
   '/projects': 'Projects',
-  '/analytics': 'Analytics & Insights',
   '/settings': 'Settings',
   '/help': 'Help & Documentation',
 };
@@ -74,14 +73,6 @@ function AppShell() {
       ];
     }
 
-    // Analytics page
-    if (path === '/analytics') {
-      return [
-        { label: 'Home', path: '/' },
-        { label: 'Analytics' },
-      ];
-    }
-
     // Help page
     if (path === '/help') {
       return [
@@ -103,9 +94,6 @@ function AppShell() {
     }
     if (location.pathname === '/projects') {
       return 'Register repositories, manage credentials, and configure project-specific settings';
-    }
-    if (location.pathname === '/analytics') {
-      return 'View task metrics, success rates, and performance insights across projects';
     }
     if (location.pathname === '/settings') {
       return 'Configure GitLab PAT, ChatGPT session credentials, and integration settings';

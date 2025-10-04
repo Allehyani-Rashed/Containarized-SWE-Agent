@@ -35,11 +35,6 @@ function TroubleshootingItem({ problem, solution }: TroubleshootingItemProps) {
 function HelpPage() {
   return (
     <div className="page">
-      <header className="page-header">
-        <h2>Help & Documentation</h2>
-        <p>Comprehensive guide to using Containerized Codex Agent</p>
-      </header>
-
       <div className="help-layout">
         {/* Getting Started Section */}
         <section className="help-section">

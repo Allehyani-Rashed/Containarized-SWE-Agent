@@ -6,9 +6,9 @@
   padding: 3rem 1.5rem;
   text-align: center;
   min-height: 320px;
-  background: rgba(15, 23, 42, 0.3);
-  border-radius: 1rem;
-  border: 1px dashed rgba(148, 163, 184, 0.25);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-xl);
+  border: 1px dashed var(--border-subtle);
 }
 
 .empty-state-icon {

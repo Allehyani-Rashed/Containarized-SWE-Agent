@@ -7,39 +7,41 @@
   /* ==================== Color Palette ==================== */
 
   /* Background Colors - Dark Theme */
-  --bg-primary: #0f1419;
-  --bg-secondary: #1a202c;
-  --bg-tertiary: #1e293b;
-  --bg-elevated: #2d3748;
-  --bg-overlay: rgba(15, 20, 25, 0.95);
+  --bg-primary: #0A0E14;
+  --bg-secondary: #151A21;
+  --bg-tertiary: #1C2128;
+  --bg-elevated: #242A32;
+  --bg-overlay: rgba(10, 14, 20, 0.95);
 
   /* Surface Colors */
-  --surface-default: #1e293b;
-  --surface-elevated: #2d3748;
-  --surface-hover: #334155;
-  --surface-active: #3d4a5c;
+  --surface-default: #1C2128;
+  --surface-elevated: #242A32;
+  --surface-hover: #2D3440;
+  --surface-active: #363E4A;
+  --surface-dark: rgba(15, 23, 42, 0.7);
+  --surface-darker: rgba(15, 23, 42, 0.9);
 
   /* Primary Colors */
-  --primary-50: #eff6ff;
-  --primary-100: #dbeafe;
-  --primary-200: #bfdbfe;
-  --primary-300: #93c5fd;
-  --primary-400: #60a5fa;
-  --primary-500: #3b82f6;
-  --primary-600: #2563eb;
-  --primary-700: #1d4ed8;
-  --primary-800: #1e40af;
-  --primary-900: #1e3a8a;
+  --primary-50: #f0f9ff;
+  --primary-100: #e0f2fe;
+  --primary-200: #bae6fd;
+  --primary-300: #7dd3fc;
+  --primary-400: #38bdf8;
+  --primary-500: #0EA5E9;
+  --primary-600: #0284C7;
+  --primary-700: #0369A1;
+  --primary-800: #075985;
+  --primary-900: #0c4a6e;
   --primary: var(--primary-500);
 
   /* Success Colors */
-  --success-50: #d1fae5;
-  --success-100: #a7f3d0;
-  --success-200: #6ee7b7;
-  --success-300: #34d399;
-  --success-400: #10b981;
-  --success-500: #059669;
-  --success-600: #047857;
+  --success-50: #f0fdf4;
+  --success-100: #dcfce7;
+  --success-200: #bbf7d0;
+  --success-300: #86efac;
+  --success-400: #22C55E;
+  --success-500: #16a34a;
+  --success-600: #15803d;
   --success: var(--success-400);
 
   /* Warning Colors */
@@ -63,9 +65,22 @@
   --error: var(--error-400);
 
   /* Info Colors */
-  --info-400: #3b82f6;
-  --info-500: #2563eb;
+  --info-400: #06B6D4;
+  --info-500: #0891B2;
   --info: var(--info-400);
+
+  /* Orange/Amber Colors */
+  --orange-200: #fed7aa;
+  --orange-300: #fdba74;
+  --orange-400: #fb923c;
+  --orange-500: #f97316;
+  --orange-bg: rgba(251, 146, 60, 0.2);
+
+  /* Purple Colors */
+  --purple-400: #c084fc;
+  --purple-500: #a855f7;
+  --purple-600: #9333ea;
+  --purple-bg: rgba(168, 85, 247, 0.2);
 
   /* Neutral/Gray Scale */
   --gray-50: #f9fafb;
@@ -80,32 +95,102 @@
   --gray-900: #111827;
 
   /* Text Colors */
-  --text-primary: #f9fafb;
-  --text-secondary: #d1d5db;
-  --text-tertiary: #9ca3af;
-  --text-disabled: #6b7280;
-  --text-inverse: #111827;
+  --text-primary: #F3F4F6;
+  --text-secondary: #9CA3AF;
+  --text-tertiary: #6B7280;
+  --text-disabled: #4B5563;
+  --text-inverse: #0A0E14;
 
   /* Border Colors */
-  --border-primary: #374151;
-  --border-secondary: #2d3748;
-  --border-tertiary: #1e293b;
+  --border-primary: #2D3440;
+  --border-secondary: #242A32;
+  --border-tertiary: #1C2128;
   --border-focus: var(--primary-500);
   --border-error: var(--error-400);
   --border-success: var(--success-400);
+  --border-subtle: rgba(148, 163, 184, 0.25);
+  --border-subtle-light: rgba(148, 163, 184, 0.15);
+  --border-steel: rgba(148, 163, 184, 0.45);
+
+  /* Steel/Slate Background Colors */
+  --color-steel-bg: rgba(148, 163, 184, 0.15);
+  --color-steel-bg-light: rgba(148, 163, 184, 0.1);
+
+  /* Focus & Interaction Shadows */
+  --shadow-focus-blue: 0 0 0 2px rgba(14, 165, 233, 0.15);
+  --shadow-focus-error: 0 0 0 2px rgba(239, 68, 68, 0.15);
+
+  /* Blue Container Backgrounds */
+  --color-blue-container: rgba(14, 165, 233, 0.15);
+  --color-blue-container-light: rgba(14, 165, 233, 0.1);
+  --color-blue-container-active: rgba(14, 165, 233, 0.22);
+
+  /* Blue Border Colors */
+  --border-blue-hover: rgba(14, 165, 233, 0.75);
+  --border-blue-active: rgba(14, 165, 233, 0.9);
+
+  /* Steel Border Variants */
+  --border-steel-light: rgba(148, 163, 184, 0.35);
+
+  /* Modal/Overlay Backgrounds */
+  --bg-modal-overlay: rgba(0, 0, 0, 0.7);
 
   /* Status Colors (matching design) */
   --status-pending: #f59e0b;
-  --status-running: #3b82f6;
-  --status-done: #10b981;
+  --status-pending-bg: rgba(251, 146, 60, 0.2);
+  --status-pending-text: #fed7aa;
+
+  --status-running: #0EA5E9;
+  --status-running-bg: rgba(14, 165, 233, 0.2);
+  --status-running-text: #bfdbfe;
+
+  --status-done: #22C55E;
+  --status-done-bg: rgba(34, 197, 94, 0.2);
+  --status-done-text: #a7f3d0;
+
   --status-failed: #ef4444;
+  --status-failed-bg: rgba(248, 113, 113, 0.2);
+  --status-failed-text: #fecaca;
+
   --status-aborted: #6b7280;
-  --status-active: #10b981;
+  --status-aborted-bg: rgba(148, 163, 184, 0.2);
+  --status-aborted-text: #e2e8f0;
+
+  --status-active: #22C55E;
+  --status-active-bg: rgba(34, 197, 94, 0.2);
+  --status-active-text: #a7f3d0;
+
   --status-idle: #f59e0b;
+  --status-idle-bg: rgba(251, 146, 60, 0.2);
+  --status-idle-text: #fed7aa;
+
   --status-error: #ef4444;
-  --status-configured: #10b981;
-  --status-verified: #10b981;
+  --status-error-bg: rgba(248, 113, 113, 0.2);
+  --status-error-text: #fecaca;
+
+  --status-configured: #22C55E;
+  --status-configured-bg: rgba(34, 197, 94, 0.2);
+  --status-configured-text: #a7f3d0;
+
+  --status-verified: #22C55E;
+  --status-verified-bg: rgba(34, 197, 94, 0.2);
+  --status-verified-text: #a7f3d0;
+
   --status-missing: #ef4444;
+  --status-missing-bg: rgba(248, 113, 113, 0.2);
+  --status-missing-text: #fecaca;
+
+  --status-selected: #0EA5E9;
+  --status-selected-bg: rgba(14, 165, 233, 0.2);
+  --status-selected-text: #bfdbfe;
+
+  --status-online: #22C55E;
+  --status-online-bg: rgba(34, 197, 94, 0.2);
+  --status-online-text: #a7f3d0;
+
+  --status-offline: #6b7280;
+  --status-offline-bg: rgba(148, 163, 184, 0.2);
+  --status-offline-text: #e2e8f0;
 
   /* ==================== Typography ==================== */
 
@@ -176,12 +261,7 @@
   --shadow-xl: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
   --shadow-2xl: 0 35px 60px -15px rgba(0, 0, 0, 0.6);
   --shadow-inner: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
-
-  /* Glow Effects */
-  --glow-primary: 0 0 20px rgba(59, 130, 246, 0.3);
-  --glow-success: 0 0 20px rgba(16, 185, 129, 0.3);
-  --glow-warning: 0 0 20px rgba(245, 158, 11, 0.3);
-  --glow-error: 0 0 20px rgba(239, 68, 68, 0.3);
+  --shadow-dark: 0 20px 60px rgba(15, 23, 42, 0.35);
 
   /* ==================== Transitions ==================== */
 

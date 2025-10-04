@@ -80,7 +80,7 @@
   position: absolute;
   top: -3rem;
   transform: translateX(-50%);
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--surface-darker);
   border: 1px solid rgba(148, 163, 184, 0.3);
   border-radius: 0.5rem;
   padding: 0.5rem 0.75rem;

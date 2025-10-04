@@ -29,73 +29,73 @@
 
 /* Status colors */
 .status-badge-pending {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fed7aa;
+  background: var(--status-pending-bg);
+  color: var(--status-pending-text);
 }
 
 .status-badge-running {
-  background: rgba(59, 130, 246, 0.2);
-  color: #bfdbfe;
+  background: var(--status-running-bg);
+  color: var(--status-running-text);
 }
 
 .status-badge-done {
-  background: rgba(16, 185, 129, 0.2);
-  color: #a7f3d0;
+  background: var(--status-done-bg);
+  color: var(--status-done-text);
 }
 
 .status-badge-failed {
-  background: rgba(248, 113, 113, 0.2);
-  color: #fecaca;
+  background: var(--status-failed-bg);
+  color: var(--status-failed-text);
 }
 
 .status-badge-aborted {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e2e8f0;
+  background: var(--status-aborted-bg);
+  color: var(--status-aborted-text);
 }
 
 .status-badge-active {
-  background: rgba(16, 185, 129, 0.2);
-  color: #a7f3d0;
+  background: var(--status-active-bg);
+  color: var(--status-active-text);
 }
 
 .status-badge-error {
-  background: rgba(248, 113, 113, 0.2);
-  color: #fecaca;
+  background: var(--status-error-bg);
+  color: var(--status-error-text);
 }
 
 .status-badge-idle {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fed7aa;
+  background: var(--status-idle-bg);
+  color: var(--status-idle-text);
 }
 
 .status-badge-verified {
-  background: rgba(16, 185, 129, 0.2);
-  color: #a7f3d0;
+  background: var(--status-verified-bg);
+  color: var(--status-verified-text);
 }
 
 .status-badge-configured {
-  background: rgba(16, 185, 129, 0.2);
-  color: #a7f3d0;
+  background: var(--status-configured-bg);
+  color: var(--status-configured-text);
 }
 
 .status-badge-missing {
-  background: rgba(248, 113, 113, 0.2);
-  color: #fecaca;
+  background: var(--status-missing-bg);
+  color: var(--status-missing-text);
 }
 
 .status-badge-selected {
-  background: rgba(59, 130, 246, 0.2);
-  color: #bfdbfe;
+  background: var(--status-selected-bg);
+  color: var(--status-selected-text);
 }
 
 .status-badge-online {
-  background: rgba(16, 185, 129, 0.2);
-  color: #a7f3d0;
+  background: var(--status-online-bg);
+  color: var(--status-online-text);
 }
 
 .status-badge-offline {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e2e8f0;
+  background: var(--status-offline-bg);
+  color: var(--status-offline-text);
 }
 
 /* Status dot */

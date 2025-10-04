@@ -34,3 +34,6 @@ export type { BarChartData } from './BarChart';
 
 export { default as LineChart } from './LineChart';
 export type { LineChartData } from './LineChart';
+
+export { default as ProjectCard } from './ProjectCard';
+export type { ProjectCardProps } from './ProjectCard';

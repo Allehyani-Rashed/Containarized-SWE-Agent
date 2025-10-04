@@ -1,9 +1,9 @@
 .card {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
   padding: 1.75rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -17,8 +17,8 @@
 
 .card-clickable:hover,
 .card-clickable:focus {
-  border-color: rgba(96, 165, 250, 0.5);
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-lg);
   transform: translateY(-2px);
   outline: none;
 }
@@ -41,13 +41,13 @@
 }
 
 .icon-blue {
-  background: rgba(59, 130, 246, 0.2);
-  color: #60a5fa;
+  background: rgba(14, 165, 233, 0.2);
+  color: var(--primary-500);
 }
 
 .icon-green {
   background: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
+  color: var(--success-400);
 }
 
 .icon-orange {

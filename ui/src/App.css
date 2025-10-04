@@ -1,7 +1,7 @@
 .app-shell {
   min-height: 100vh;
-  background: linear-gradient(180deg, #0f172a 0%, #172554 45%, #0f172a 100%);
-  color: #e2e8f0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
   padding: 3rem 1.5rem 4rem;
   display: flex;
   flex-direction: column;
@@ -34,7 +34,7 @@
 .hero p {
   margin: 0;
   font-size: 1.1rem;
-  color: rgba(226, 232, 240, 0.9);
+  color: var(--text-secondary);
 }
 
 .app-layout {
@@ -47,11 +47,11 @@
 }
 
 .app-nav {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: 0.75rem 1rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .app-nav ul {
@@ -74,8 +74,8 @@
   padding: 0.55rem 1rem;
   border-radius: 0.75rem;
   border: 1px solid transparent;
-  background: rgba(15, 23, 42, 0.55);
-  color: rgba(226, 232, 240, 0.85);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
   text-decoration: none;
   font-weight: 600;
   transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
@@ -83,14 +83,14 @@
 
 .nav-link:hover,
 .nav-link:focus {
-  border-color: rgba(96, 165, 250, 0.5);
-  color: #f8fafc;
+  border-color: var(--border-focus);
+  color: var(--text-primary);
 }
 
 .nav-link.active {
-  background: rgba(59, 130, 246, 0.35);
-  border-color: rgba(59, 130, 246, 0.5);
-  color: #ffffff;
+  background: var(--surface-elevated);
+  border-color: var(--primary-500);
+  color: var(--text-primary);
 }
 
 .app-main {
@@ -135,7 +135,7 @@
 
 .page-header p {
   margin: 0;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .error-banner {
@@ -148,11 +148,11 @@
 
 /* Panel - Legacy name for card component (use .card from components.css for new code) */
 .panel {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: 1.75rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
@@ -181,11 +181,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: 1.25rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 /* Notice/Alert - prefer .alert classes from components.css for new code */
@@ -193,8 +193,8 @@
   border-radius: 0.75rem;
   padding: 0.85rem 1rem;
   font-size: 0.92rem;
-  background: rgba(148, 163, 184, 0.2);
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: var(--status-aborted-bg);
+  border: 1px solid var(--border-steel-light);
 }
 
 .notice-success {
@@ -239,7 +239,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 0.82rem;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .credential-forms {
@@ -258,11 +258,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: 1rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .session-form textarea {
@@ -285,7 +285,7 @@
 
 .file-hint {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
   margin: -0.4rem 0 0;
 }
 
@@ -304,9 +304,9 @@ input,
 select,
 textarea {
   border-radius: 0.6rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.85);
-  color: #e2e8f0;
+  border: 1px solid var(--border-primary);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
   padding: 0.6rem 0.75rem;
   font-size: 0.95rem;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -316,8 +316,8 @@ input:focus,
 select:focus,
 textarea:focus {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.6);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-focus-blue);
 }
 
 /* Legacy button styling - prefer .btn classes from components.css for new code */
@@ -328,15 +328,15 @@ button {
   font-size: 0.95rem;
   font-weight: 600;
   cursor: pointer;
-  background: rgba(59, 130, 246, 0.85);
-  color: #f8fafc;
+  background: var(--primary-500);
+  color: white;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 button:hover:enabled,
 button:focus-visible:enabled {
-  background: rgba(59, 130, 246, 0.95);
-  box-shadow: 0 10px 25px rgba(59, 130, 246, 0.35);
+  background: var(--primary-600);
+  box-shadow: var(--shadow-md);
 }
 
 button:disabled {
@@ -347,29 +347,29 @@ button:disabled {
 /* Button variants - use .btn-{variant} from components.css for new code */
 .ghost-button {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  color: rgba(226, 232, 240, 0.9);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
 }
 
 .danger-button {
-  background: rgba(248, 113, 113, 0.85);
+  background: var(--error-400);
 }
 
 .danger-button:hover:enabled,
 .danger-button:focus-visible:enabled {
-  background: rgba(248, 113, 113, 0.95);
-  box-shadow: 0 10px 25px rgba(248, 113, 113, 0.35);
+  background: var(--error-500);
+  box-shadow: var(--shadow-md);
 }
 
 .secondary-button {
-  background: rgba(148, 163, 184, 0.35);
-  color: rgba(226, 232, 240, 0.92);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
 }
 
 .secondary-button:hover:enabled,
 .secondary-button:focus-visible:enabled {
-  background: rgba(148, 163, 184, 0.45);
-  box-shadow: 0 10px 25px rgba(148, 163, 184, 0.35);
+  background: var(--surface-hover);
+  box-shadow: var(--shadow-md);
 }
 
 /* Button layout utilities */
@@ -404,11 +404,11 @@ th[role='button']:focus-visible {
 /* Table wrapper - use .table-container from components.css */
 /* Keeping legacy .table-wrapper for backward compatibility */
 .table-wrapper {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: 1.25rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 /* Responsive table inner container */
@@ -426,17 +426,17 @@ th[role='button']:focus-visible {
 }
 
 .table-responsive::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.5);
+  background: var(--bg-secondary);
   border-radius: 0.5rem;
 }
 
 .table-responsive::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.5);
+  background: var(--color-steel-bg);
   border-radius: 0.5rem;
 }
 
 .table-responsive::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.7);
+  background: var(--border-steel);
 }
 
 .panel-header {
@@ -452,11 +452,11 @@ th[role='button']:focus-visible {
   align-items: center;
   gap: 0.75rem;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .filter-indicator {
-  background: rgba(59, 130, 246, 0.25);
+  background: var(--color-blue-container-active);
   color: #bfdbfe;
   padding: 0.2rem 0.65rem;
   border-radius: 999px;
@@ -482,7 +482,7 @@ th[role='button']:focus-visible {
 .filter-group legend {
   font-weight: 600;
   font-size: 0.9rem;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .filter-options {
@@ -498,11 +498,11 @@ th[role='button']:focus-visible {
   gap: 0.4rem;
   padding: 0.35rem 0.85rem;
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border-steel-light);
+  background: var(--color-steel-bg-light);
   cursor: pointer;
   transition: border-color 0.2s ease, background-color 0.2s ease;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .filter-chip input {
@@ -514,13 +514,13 @@ th[role='button']:focus-visible {
 
 .filter-chip:hover,
 .filter-chip:focus-within {
-  border-color: rgba(96, 165, 250, 0.75);
+  border-color: var(--border-blue-hover);
 }
 
 .filter-chip.active {
-  background: rgba(59, 130, 246, 0.22);
-  border-color: rgba(96, 165, 250, 0.9);
-  color: #e0f2fe;
+  background: var(--color-blue-container-active);
+  border-color: var(--border-blue-active);
+  color: var(--primary-100);
 }
 
 .filter-field {
@@ -532,23 +532,23 @@ th[role='button']:focus-visible {
 .filter-field label {
   font-weight: 600;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.9);
+  color: var(--text-secondary);
 }
 
 .filter-field input,
 .filter-field select {
-  background: rgba(15, 23, 42, 0.6);
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: var(--color-blue-container-light);
+  border: 1px solid var(--border-steel-light);
   border-radius: 0.6rem;
   padding: 0.55rem 0.8rem;
-  color: #e2e8f0;
+  color: var(--text-primary);
 }
 
 .filter-field input:focus-visible,
 .filter-field select:focus-visible {
   outline: none;
-  border-color: rgba(96, 165, 250, 0.9);
-  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-focus-blue);
 }
 
 .filter-actions {
@@ -571,13 +571,8 @@ th[role='button']:focus-visible {
   display: inline-block;
   height: 0.75rem;
   border-radius: 999px;
-  background: linear-gradient(
-    90deg,
-    rgba(71, 85, 105, 0.35) 0%,
-    rgba(148, 163, 184, 0.45) 50%,
-    rgba(71, 85, 105, 0.35) 100%
-  );
-  background-size: 200% 100%;
+  background: var(--surface-elevated);
+  opacity: 0.6;
   animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
@@ -586,11 +581,11 @@ th[role='button']:focus-visible {
 }
 
 @keyframes skeleton-shimmer {
-  0% {
-    background-position: -200% 0;
+  0%, 100% {
+    opacity: 0.4;
   }
-  100% {
-    background-position: 200% 0;
+  50% {
+    opacity: 0.8;
   }
 }
 
@@ -601,7 +596,7 @@ th[role='button']:focus-visible {
 .table-responsive td {
   padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+  border-bottom: 1px solid var(--border-subtle-light);
 }
 
 .table-wrapper th,
@@ -610,8 +605,8 @@ th[role='button']:focus-visible {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(226, 232, 240, 0.85);
-  background: rgba(15, 23, 42, 0.6);
+  color: var(--text-secondary);
+  background: var(--color-steel-bg-light);
   white-space: nowrap;
 }
 
@@ -628,11 +623,11 @@ th[role='button']:focus-visible {
 
 /* Zebra striping */
 .table-responsive tbody tr:nth-child(even) {
-  background: rgba(15, 23, 42, 0.25);
+  background: var(--bg-tertiary);
 }
 
 .table-responsive tbody tr:nth-child(odd) {
-  background: rgba(15, 23, 42, 0.05);
+  background: var(--bg-secondary);
 }
 
 .task-table tr {
@@ -641,11 +636,11 @@ th[role='button']:focus-visible {
 }
 
 .task-table tbody tr:hover {
-  background: rgba(59, 130, 246, 0.12);
+  background: var(--color-blue-container-light);
 }
 
 .task-table tbody tr.active {
-  background: rgba(59, 130, 246, 0.22);
+  background: var(--color-blue-container-active);
 }
 
 /* Sticky first column for horizontal scroll */
@@ -653,29 +648,29 @@ th[role='button']:focus-visible {
   position: sticky;
   left: 0;
   z-index: 20;
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--color-steel-bg-light);
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
 }
 
 .table-responsive thead .sticky-column {
   z-index: 30;
-  background: rgba(15, 23, 42, 0.98);
+  background: var(--color-steel-bg-light);
 }
 
 .table-responsive tbody tr:nth-child(even) .sticky-column {
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--bg-tertiary);
 }
 
 .table-responsive tbody tr:nth-child(odd) .sticky-column {
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--bg-secondary);
 }
 
 .task-table.table-responsive tbody tr:hover .sticky-column {
-  background: rgba(59, 130, 246, 0.25);
+  background: var(--color-blue-container-active);
 }
 
 .task-table.table-responsive tbody tr.active .sticky-column {
-  background: rgba(59, 130, 246, 0.35);
+  background: var(--status-running-bg);
 }
 
 .task-table-skeleton td {
@@ -694,7 +689,7 @@ th[role='button']:focus-visible {
 .table-hint {
   margin: 0;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 /* Status badges - prefer .badge-status from components.css for new code */
@@ -720,18 +715,18 @@ th[role='button']:focus-visible {
 }
 
 .status-running {
-  background: rgba(59, 130, 246, 0.2);
-  color: #dbeafe;
+  background: var(--status-running-bg);
+  color: var(--status-running-text);
 }
 
 .status-pending {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fef3c7;
+  background: var(--status-pending-bg);
+  color: var(--status-pending-text);
 }
 
 .status-aborted {
-  background: rgba(148, 163, 184, 0.2);
-  color: #e2e8f0;
+  background: var(--status-aborted-bg);
+  color: var(--status-aborted-text);
 }
 
 .status-live {
@@ -741,7 +736,7 @@ th[role='button']:focus-visible {
 
 .empty {
   margin: 0;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
 }
 
 .task-drawer {
@@ -757,20 +752,20 @@ th[role='button']:focus-visible {
 .task-drawer-backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.45);
+  background: var(--bg-overlay);
   pointer-events: none;
 }
 
 .task-drawer-panel {
   position: relative;
   width: min(540px, 100%);
-  background: rgba(15, 23, 42, 0.98);
-  border-left: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-steel);
   padding: 2.5rem 2rem;
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  box-shadow: -10px 0 40px rgba(15, 23, 42, 0.6);
+  box-shadow: var(--shadow-dark);
   overflow-y: auto;
   pointer-events: auto;
 }
@@ -780,7 +775,7 @@ th[role='button']:focus-visible {
   top: 1rem;
   right: 1rem;
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.4);
+  border: 1px solid var(--border-steel);
   width: 2.25rem;
   height: 2.25rem;
   border-radius: 50%;
@@ -817,7 +812,7 @@ th[role='button']:focus-visible {
 
 .drawer-subtle {
   margin: 0.75rem 0 0;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
   font-size: 0.9rem;
 }
 
@@ -833,7 +828,7 @@ th[role='button']:focus-visible {
   border-radius: 999px;
   font-size: 0.75rem;
   font-weight: 600;
-  background: rgba(251, 191, 36, 0.2);
+  background: var(--status-pending-bg);
   color: #fef3c7;
 }
 
@@ -853,7 +848,7 @@ th[role='button']:focus-visible {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
   margin-bottom: 0.25rem;
 }
 
@@ -870,7 +865,7 @@ th[role='button']:focus-visible {
 .drawer-modal {
   position: absolute;
   inset: 0;
-  background: rgba(15, 23, 42, 0.85);
+  background: var(--bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -878,9 +873,9 @@ th[role='button']:focus-visible {
 }
 
 .drawer-modal-card {
-  background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-steel);
+  border-radius: var(--radius-xl);
   padding: 1.75rem;
   display: flex;
   flex-direction: column;
@@ -888,7 +883,7 @@ th[role='button']:focus-visible {
   max-width: 400px;
   width: 100%;
   text-align: left;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-dark);
 }
 
 .drawer-modal-card h4 {
@@ -898,7 +893,7 @@ th[role='button']:focus-visible {
 
 .drawer-modal-card p {
   margin: 0;
-  color: rgba(226, 232, 240, 0.85);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -916,8 +911,8 @@ th[role='button']:focus-visible {
   gap: 1rem;
   border-radius: 0.75rem;
   padding: 0.9rem 1rem;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: var(--color-blue-container-light);
+  border: 1px solid var(--color-blue-container-active);
 }
 
 .lookup {
@@ -945,7 +940,7 @@ th[role='button']:focus-visible {
 
 .task-metadata dt {
   font-size: 0.85rem;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
 }
 
 .task-metadata dd {
@@ -972,13 +967,13 @@ th[role='button']:focus-visible {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
 }
 
 .logs-metadata dd {
   margin: 0.2rem 0 0;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.9);
+  color: var(--text-secondary);
 }
 
 .logs-header {
@@ -1001,7 +996,7 @@ th[role='button']:focus-visible {
 }
 
 .copy-feedback-success {
-  color: #34d399;
+  color: var(--success-400);
 }
 
 .copy-feedback-error {
@@ -1014,16 +1009,16 @@ th[role='button']:focus-visible {
 }
 
 .log-output {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--color-steel-bg-light);
+  border: 1px solid var(--border-steel-light);
   border-radius: 1rem;
   padding: 1rem;
   max-height: 320px;
   overflow: auto;
   font-size: 0.85rem;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-  color: rgba(226, 232, 240, 0.9);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-md);
 }
 
 .notice a {
@@ -1033,7 +1028,7 @@ th[role='button']:focus-visible {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.65);
+  background: var(--bg-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1042,16 +1037,16 @@ th[role='button']:focus-visible {
 }
 
 .modal {
-  background: rgba(15, 23, 42, 0.95);
+  background: var(--bg-secondary);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  border: 1px solid var(--border-primary);
   padding: 1.5rem;
   max-width: 460px;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-2xl);
 }
 
 .modal-actions {
@@ -1062,7 +1057,7 @@ th[role='button']:focus-visible {
 
 .meta {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
 }
 
 .table-status {
@@ -1168,7 +1163,7 @@ th[role='button']:focus-visible {
   cursor: pointer;
   transition: all 0.2s ease;
   white-space: nowrap;
-  background: rgba(15, 23, 42, 0.6);
+  background: var(--surface-dark);
 }
 
 .action-btn:disabled {
@@ -1200,15 +1195,15 @@ th[role='button']:focus-visible {
 
 /* Retry button - Blue/Primary */
 .action-btn-retry {
-  border-color: rgba(59, 130, 246, 0.5);
-  background: rgba(59, 130, 246, 0.2);
-  color: #dbeafe;
+  border-color: var(--border-subtle);
+  background: var(--status-running-bg);
+  color: var(--status-running-text);
 }
 
 .action-btn-retry:not(:disabled):hover {
-  border-color: rgba(59, 130, 246, 0.75);
-  background: rgba(59, 130, 246, 0.25);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  border-color: var(--border-blue-hover);
+  background: var(--color-blue-container-active);
+  box-shadow: var(--shadow-md);
 }
 
 /* Clone button - Green/Success */

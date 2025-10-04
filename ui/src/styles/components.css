@@ -6,38 +6,38 @@
 /* ==================== Cards ==================== */
 
 .card {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: var(--space-6);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
   transition: all var(--transition-base);
 }
 
 .card:hover {
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  box-shadow: var(--shadow-lg);
 }
 
 .card-elevated {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: var(--space-6);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
   transition: all var(--transition-base);
 }
 
 .card-elevated:hover {
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  box-shadow: var(--shadow-lg);
   transform: translateY(-2px);
 }
 
 .card-bordered {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
   border-radius: 1rem;
   padding: var(--space-6);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .card-header {
@@ -74,35 +74,35 @@
 
 /* Status Cards */
 .card-success {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--success-400);
   border-radius: 1rem;
   padding: var(--space-4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .card-warning {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--warning-400);
   border-radius: 1rem;
   padding: var(--space-4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .card-error {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--error-400);
   border-radius: 1rem;
   padding: var(--space-4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .card-info {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--info-400);
   border-radius: 1rem;
   padding: var(--space-4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 /* ==================== Buttons ==================== */
@@ -137,7 +137,7 @@
 
 .btn-primary:hover:not(:disabled) {
   background-color: var(--primary-600);
-  box-shadow: var(--glow-primary);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary:active:not(:disabled) {
@@ -168,7 +168,7 @@
 
 .btn-success:hover:not(:disabled) {
   background-color: var(--success-500);
-  box-shadow: var(--glow-success);
+  box-shadow: var(--shadow-md);
 }
 
 /* Danger/Error Button */
@@ -179,7 +179,7 @@
 
 .btn-danger:hover:not(:disabled) {
   background-color: var(--error-500);
-  box-shadow: var(--glow-error);
+  box-shadow: var(--shadow-md);
 }
 
 /* Warning Button */
@@ -190,7 +190,7 @@
 
 .btn-warning:hover:not(:disabled) {
   background-color: var(--warning-500);
-  box-shadow: var(--glow-warning);
+  box-shadow: var(--shadow-md);
 }
 
 /* Ghost Button */
@@ -268,7 +268,7 @@
 .select:focus {
   outline: none;
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  box-shadow: var(--shadow-focus-blue);
 }
 
 .input:disabled,
@@ -287,7 +287,7 @@
 .input.error:focus,
 .textarea.error:focus,
 .select.error:focus {
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+  box-shadow: var(--shadow-focus-error);
 }
 
 .input-error {
@@ -339,67 +339,67 @@
 /* Status Badge Variants */
 .badge-pending,
 .badge-status.pending {
-  background-color: rgba(251, 146, 60, 0.2);
+  background-color: var(--status-pending-bg);
   color: var(--warning-400);
 }
 
 .badge-running,
 .badge-status.running {
-  background-color: rgba(59, 130, 246, 0.2);
-  color: var(--primary-400);
+  background-color: var(--status-running-bg);
+  color: var(--primary-500);
 }
 
 .badge-done,
 .badge-status.done {
-  background-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--status-done-bg);
   color: var(--success-400);
 }
 
 .badge-failed,
 .badge-status.failed {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: var(--status-failed-bg);
   color: var(--error-400);
 }
 
 .badge-aborted,
 .badge-status.aborted {
-  background-color: rgba(107, 114, 128, 0.2);
+  background-color: var(--status-aborted-bg);
   color: var(--gray-400);
 }
 
 .badge-active,
 .badge-status.active {
-  background-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--status-active-bg);
   color: var(--success-400);
 }
 
 .badge-idle,
 .badge-status.idle {
-  background-color: rgba(251, 146, 60, 0.2);
+  background-color: var(--status-idle-bg);
   color: var(--warning-400);
 }
 
 .badge-error,
 .badge-status.error {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: var(--status-error-bg);
   color: var(--error-400);
 }
 
 .badge-configured,
 .badge-status.configured {
-  background-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--status-configured-bg);
   color: var(--success-400);
 }
 
 .badge-verified,
 .badge-status.verified {
-  background-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--status-verified-bg);
   color: var(--success-400);
 }
 
 .badge-missing,
 .badge-status.missing {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: var(--status-missing-bg);
   color: var(--error-400);
 }
 
@@ -537,35 +537,35 @@
 }
 
 .alert-info {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--info-400);
   border-radius: 1rem;
   color: var(--text-primary);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .alert-success {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--success-400);
   border-radius: 1rem;
   color: var(--text-primary);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .alert-warning {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--warning-400);
   border-radius: 1rem;
   color: var(--text-primary);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .alert-error {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--bg-secondary);
+  border: 1px solid var(--error-400);
   border-radius: 1rem;
   color: var(--text-primary);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 /* ==================== Table Components ==================== */
@@ -573,9 +573,9 @@
 .table-container {
   overflow-x: auto;
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(15, 23, 42, 0.7);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border-primary);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-md);
 }
 
 .table {
@@ -633,28 +633,28 @@
 }
 
 .icon-container-primary {
-  background-color: rgba(59, 130, 246, 0.2);
-  color: var(--primary-400);
+  background-color: var(--color-blue-container);
+  color: var(--primary-500);
 }
 
 .icon-container-success {
-  background-color: rgba(16, 185, 129, 0.2);
+  background-color: var(--status-done-bg);
   color: var(--success-400);
 }
 
 .icon-container-warning {
-  background-color: rgba(251, 146, 60, 0.2);
+  background-color: var(--status-pending-bg);
   color: var(--warning-400);
 }
 
 .icon-container-error {
-  background-color: rgba(239, 68, 68, 0.2);
+  background-color: var(--status-failed-bg);
   color: var(--error-400);
 }
 
 .icon-container-purple {
-  background-color: rgba(168, 85, 247, 0.2);
-  color: #a855f7;
+  background-color: var(--purple-bg);
+  color: var(--purple-500);
 }
 
 /* ==================== Loading States ==================== */
@@ -686,20 +686,15 @@
 }
 
 .skeleton {
-  background: linear-gradient(
-    90deg,
-    var(--surface-elevated) 25%,
-    var(--surface-hover) 50%,
-    var(--surface-elevated) 75%
-  );
-  background-size: 200% 100%;
+  background: var(--surface-elevated);
+  opacity: 0.6;
   animation: shimmer 1.5s infinite;
   border-radius: var(--radius-md);
 }
 
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 
 /* ==================== Dividers ==================== */

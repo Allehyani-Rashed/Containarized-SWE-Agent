@@ -13,8 +13,8 @@
 }
 
 .btn:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
 }
 
 .btn:active:not(:disabled) {
@@ -44,62 +44,62 @@
 
 /* Variants */
 .btn-primary {
-  background: #3b82f6;
-  color: #f8fafc;
+  background: var(--primary-500);
+  color: white;
 }
 
 .btn-primary:hover:enabled,
 .btn-primary:focus-visible:enabled {
-  background: rgba(59, 130, 246, 0.9);
-  box-shadow: 0 20px 60px rgba(59, 130, 246, 0.35);
+  background: var(--primary-600);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {
-  background: rgba(15, 23, 42, 0.7);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  color: rgba(226, 232, 240, 0.92);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
 }
 
 .btn-secondary:hover:enabled,
 .btn-secondary:focus-visible:enabled {
-  background: rgba(15, 23, 42, 0.85);
-  border-color: rgba(148, 163, 184, 0.4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  background: var(--surface-hover);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-success {
-  background: #10b981;
-  color: #f8fafc;
+  background: var(--success-400);
+  color: white;
 }
 
 .btn-success:hover:enabled,
 .btn-success:focus-visible:enabled {
-  background: rgba(16, 185, 129, 0.9);
-  box-shadow: 0 20px 60px rgba(16, 185, 129, 0.35);
+  background: var(--success-500);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-danger {
-  background: #f87171;
-  color: #f8fafc;
+  background: var(--error-400);
+  color: white;
 }
 
 .btn-danger:hover:enabled,
 .btn-danger:focus-visible:enabled {
-  background: rgba(248, 113, 113, 0.9);
-  box-shadow: 0 20px 60px rgba(248, 113, 113, 0.35);
+  background: var(--error-500);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-ghost {
   background: transparent;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  color: rgba(226, 232, 240, 0.9);
+  border: 1px solid var(--border-primary);
+  color: var(--text-secondary);
 }
 
 .btn-ghost:hover:enabled,
 .btn-ghost:focus-visible:enabled {
-  background: rgba(148, 163, 184, 0.1);
-  border-color: rgba(148, 163, 184, 0.4);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+  background: var(--surface-hover);
+  border-color: var(--border-focus);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Full width */

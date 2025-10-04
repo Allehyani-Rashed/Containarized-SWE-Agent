@@ -17,7 +17,7 @@
   gap: 0.75rem;
   margin-bottom: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .section-icon {
@@ -32,29 +32,29 @@
 }
 
 .section-icon-blue {
-  background: rgba(59, 130, 246, 0.2);
-  color: #3b82f6;
+  background: var(--status-running-bg);
+  color: var(--primary-500);
 }
 
 .section-icon-green {
-  background: rgba(16, 185, 129, 0.2);
-  color: #10b981;
+  background: var(--status-done-bg);
+  color: var(--success-500);
 }
 
 .section-icon-orange {
-  background: rgba(251, 146, 60, 0.2);
-  color: #fb923c;
+  background: var(--orange-bg);
+  color: var(--orange-400);
 }
 
 .section-icon-purple {
-  background: rgba(168, 85, 247, 0.2);
-  color: #a855f7;
+  background: var(--purple-bg);
+  color: var(--purple-500);
 }
 
 .section-header h3 {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #f9fafb;
+  color: var(--gray-50);
   margin: 0;
 }
 
@@ -76,16 +76,17 @@
   display: flex;
   gap: 1rem;
   padding: 1rem;
-  background-color: rgba(15, 23, 42, 0.7);
+  background-color: var(--color-steel-bg-light);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border-steel-light);
+  box-shadow: var(--shadow-dark);
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .step-item:hover {
-  border-color: rgba(59, 130, 246, 0.5);
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  background-color: var(--color-blue-container-light);
+  border-color: var(--border-blue-hover);
+  box-shadow: var(--shadow-lg);
   transform: translateX(4px);
 }
 
@@ -95,11 +96,11 @@
   justify-content: center;
   width: 40px;
   height: 40px;
-  background: rgba(59, 130, 246, 0.2);
+  background: var(--status-running-bg);
   border-radius: 50%;
   font-size: 1.125rem;
   font-weight: 700;
-  color: #3b82f6;
+  color: var(--primary-500);
   flex-shrink: 0;
 }
 
@@ -113,14 +114,14 @@
 .step-content h4 {
   font-size: 1rem;
   font-weight: 600;
-  color: #f9fafb;
+  color: var(--gray-50);
   margin: 0;
 }
 
 .step-content p {
   font-size: 0.875rem;
   line-height: 1.6;
-  color: #d1d5db;
+  color: var(--gray-300);
   margin: 0;
 }
 
@@ -133,22 +134,23 @@
 
 .faq-item {
   padding: 1rem;
-  background-color: rgba(15, 23, 42, 0.7);
+  background-color: var(--color-steel-bg-light);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border-steel-light);
+  box-shadow: var(--shadow-dark);
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .faq-item:hover {
-  border-color: rgba(16, 185, 129, 0.5);
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  background-color: var(--color-blue-container-light);
+  border-color: var(--border-blue-hover);
+  box-shadow: var(--shadow-lg);
 }
 
 .faq-question {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #f9fafb;
+  color: var(--gray-50);
   margin: 0 0 0.75rem 0;
   display: flex;
   align-items: flex-start;
@@ -157,7 +159,7 @@
 
 .faq-question::before {
   content: 'Q:';
-  color: #10b981;
+  color: var(--success-500);
   font-weight: 700;
   flex-shrink: 0;
 }
@@ -165,7 +167,7 @@
 .faq-answer {
   font-size: 0.875rem;
   line-height: 1.6;
-  color: #d1d5db;
+  color: var(--gray-300);
 }
 
 .faq-answer p {
@@ -178,10 +180,10 @@
 
 .faq-detail {
   font-size: 0.8125rem;
-  color: #9ca3af;
+  color: var(--gray-400);
   font-style: italic;
   padding-left: 1rem;
-  border-left: 2px solid rgba(148, 163, 184, 0.3);
+  border-left: 2px solid var(--border-subtle);
 }
 
 .faq-list-items {
@@ -193,12 +195,12 @@
 }
 
 .faq-list-items li {
-  color: #d1d5db;
+  color: var(--gray-300);
   line-height: 1.6;
 }
 
 .faq-list-items li strong {
-  color: #f9fafb;
+  color: var(--gray-50);
 }
 
 /* Troubleshooting Section */
@@ -210,25 +212,29 @@
 
 .troubleshooting-item {
   padding: 1rem;
-  background-color: rgba(15, 23, 42, 0.7);
+  background-color: var(--color-steel-bg-light);
   border-radius: 1rem;
-  border-left: 3px solid #fb923c;
-  border-right: 1px solid rgba(148, 163, 184, 0.25);
-  border-top: 1px solid rgba(148, 163, 184, 0.25);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border-left: 3px solid var(--orange-400);
+  border-right: 1px solid var(--border-steel-light);
+  border-top: 1px solid var(--border-steel-light);
+  border-bottom: 1px solid var(--border-steel-light);
+  box-shadow: var(--shadow-dark);
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .troubleshooting-item:hover {
-  border-left-color: #fb923c;
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  background-color: var(--color-blue-container-light);
+  border-left-color: var(--orange-400);
+  border-right-color: var(--border-blue-hover);
+  border-top-color: var(--border-blue-hover);
+  border-bottom-color: var(--border-blue-hover);
+  box-shadow: var(--shadow-lg);
 }
 
 .troubleshooting-problem {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #f9fafb;
+  color: var(--gray-50);
   margin: 0 0 0.75rem 0;
   display: flex;
   align-items: flex-start;
@@ -237,14 +243,14 @@
 
 .troubleshooting-problem::before {
   content: '⚠';
-  color: #fb923c;
+  color: var(--orange-400);
   flex-shrink: 0;
 }
 
 .troubleshooting-solution {
   font-size: 0.875rem;
   line-height: 1.6;
-  color: #d1d5db;
+  color: var(--gray-300);
 }
 
 .troubleshooting-solution p {
@@ -264,24 +270,25 @@
 }
 
 .troubleshooting-steps li {
-  color: #d1d5db;
+  color: var(--gray-300);
   line-height: 1.6;
 }
 
 .troubleshooting-steps li code {
-  background-color: rgba(15, 23, 42, 0.7);
+  background-color: var(--color-blue-container-light);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
   font-size: 0.8125rem;
-  color: #d1d5db;
+  color: var(--primary-300);
+  border: 1px solid var(--border-steel-light);
 }
 
 .troubleshooting-detail {
   font-size: 0.8125rem;
-  color: #9ca3af;
+  color: var(--gray-400);
   font-style: italic;
   padding-left: 1rem;
-  border-left: 2px solid rgba(148, 163, 184, 0.3);
+  border-left: 2px solid var(--border-subtle);
   margin-top: 0.75rem;
 }
 
@@ -289,16 +296,16 @@
 .code-block {
   margin: 0.75rem 0;
   padding: 0.75rem;
-  background-color: rgba(15, 23, 42, 0.9);
+  background-color: var(--color-steel-bg-light);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border-steel-light);
+  box-shadow: var(--shadow-dark);
 }
 
 .code-block code {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 0.8125rem;
-  color: #d1d5db;
+  color: var(--primary-300);
   background: transparent;
   padding: 0;
   white-space: pre-wrap;
@@ -317,16 +324,17 @@
   display: flex;
   gap: 1rem;
   padding: 1rem;
-  background-color: rgba(15, 23, 42, 0.7);
+  background-color: var(--color-steel-bg-light);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  border: 1px solid var(--border-steel-light);
+  box-shadow: var(--shadow-dark);
   transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .resource-item:hover {
-  border-color: rgba(168, 85, 247, 0.5);
-  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  background-color: var(--color-blue-container-light);
+  border-color: var(--border-blue-hover);
+  box-shadow: var(--shadow-lg);
 }
 
 .resource-icon {
@@ -349,14 +357,14 @@
 .resource-content h4 {
   font-size: 0.9375rem;
   font-weight: 600;
-  color: #f9fafb;
+  color: var(--gray-50);
   margin: 0;
 }
 
 .resource-content p {
   font-size: 0.875rem;
   line-height: 1.6;
-  color: #d1d5db;
+  color: var(--gray-300);
   margin: 0;
 }
 

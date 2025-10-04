@@ -3,11 +3,10 @@ import AppShell from './components/AppShell';
 import { ProjectsProvider } from './hooks/useProjectsData';
 import { PatStatusProvider } from './hooks/usePatStatus';
 import ProjectsPage from './pages/ProjectsPage';
-import ProjectDetailPage from './pages/ProjectDetailPage';
+import ProjectDetailPageNew from './pages/ProjectDetailPageNew';
 import SettingsPage from './pages/SettingsPage';
 import TaskListPage from './pages/TaskListPage';
 import TaskSubmitPage from './pages/TaskSubmitPage';
-import AnalyticsPage from './pages/AnalyticsPage';
 import HelpPage from './pages/HelpPage';
 import './App.css';
 
@@ -27,9 +26,8 @@ function App() {
         <Route index element={<TaskSubmitPage />} />
         <Route path="tasks" element={<TaskListPage />} />
         <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:projectId" element={<ProjectDetailPage />} />
+        <Route path="projects/:projectId" element={<ProjectDetailPageNew />} />
         <Route path="settings" element={<SettingsPage />} />
-        <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
