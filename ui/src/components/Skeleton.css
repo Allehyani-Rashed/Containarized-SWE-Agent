@@ -1,0 +1,162 @@
+/* Skeleton Component - Loading States */
+
+.skeleton {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--surface-default) 0%,
+    var(--surface-elevated) 50%,
+    var(--surface-default) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-base);
+}
+
+/* Shimmer Animation */
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Pulse Animation (Alternative) */
+@keyframes skeleton-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Variant: Text Line */
+.skeleton-text {
+  height: 1rem;
+  width: 100%;
+  max-width: 300px;
+}
+
+/* Variant: Title/Heading */
+.skeleton-title {
+  height: 1.5rem;
+  width: 60%;
+  max-width: 400px;
+}
+
+/* Variant: Rectangle Block */
+.skeleton-rectangle {
+  height: 100px;
+  width: 100%;
+  border-radius: var(--radius-md);
+}
+
+/* Variant: Circle (Avatar/Icon) */
+.skeleton-circle {
+  height: 40px;
+  width: 40px;
+  border-radius: var(--radius-full);
+}
+
+/* Table Row Skeleton */
+.skeleton-table-row {
+  opacity: 0.7;
+}
+
+.skeleton-table-row td {
+  padding: var(--space-3);
+}
+
+/* Multiple Skeleton Lines */
+.skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Skeleton Card */
+.skeleton-card {
+  background-color: var(--surface-default);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Skeleton Metric Card */
+.skeleton-metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6);
+}
+
+.skeleton-metric-card .skeleton-circle {
+  margin-bottom: var(--space-2);
+}
+
+.skeleton-metric-card .skeleton-title {
+  width: 80%;
+}
+
+.skeleton-metric-card .skeleton-text {
+  width: 40%;
+}
+
+/* Skeleton Table */
+.skeleton-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.skeleton-table thead th {
+  padding: var(--space-3);
+  background-color: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-secondary);
+  text-align: left;
+  font-weight: var(--font-medium);
+}
+
+.skeleton-table tbody td {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border-tertiary);
+}
+
+/* Accessibility */
+.skeleton[aria-hidden="true"] {
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: skeleton-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+}
+
+/* Dark Theme Adjustments */
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--surface-default) 0%,
+      var(--surface-elevated) 50%,
+      var(--surface-default) 100%
+    );
+  }
+}

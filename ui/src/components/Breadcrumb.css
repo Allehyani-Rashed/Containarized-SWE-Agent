@@ -1,0 +1,137 @@
+/* Breadcrumb Navigation */
+.breadcrumb {
+  margin-bottom: 1rem;
+  padding: 0.75rem 2rem;
+  background: transparent;
+}
+
+.breadcrumb-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.breadcrumb-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+/* Breadcrumb Links */
+.breadcrumb-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(148, 163, 184, 0.85);
+  text-decoration: none;
+  transition: color 0.2s ease, background-color 0.2s ease;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+}
+
+.breadcrumb-link:hover {
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+.breadcrumb-link:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* Current Page */
+.breadcrumb-current {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: rgba(226, 232, 240, 0.95);
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+}
+
+/* Home Icon */
+.breadcrumb-home-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.breadcrumb-link .breadcrumb-home-icon {
+  color: rgba(148, 163, 184, 0.85);
+  transition: color 0.2s ease;
+}
+
+.breadcrumb-link:hover .breadcrumb-home-icon {
+  color: #3b82f6;
+}
+
+.breadcrumb-current .breadcrumb-home-icon {
+  color: rgba(148, 163, 184, 0.85);
+}
+
+/* Separator */
+.breadcrumb-separator {
+  flex-shrink: 0;
+  color: rgba(148, 163, 184, 0.5);
+  width: 16px;
+  height: 16px;
+}
+
+/* Label */
+.breadcrumb-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+  .breadcrumb {
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 1.5rem;
+  }
+
+  .breadcrumb-list {
+    gap: 0.25rem;
+  }
+
+  .breadcrumb-item {
+    font-size: 0.75rem;
+  }
+
+  .breadcrumb-link,
+  .breadcrumb-current {
+    padding: 0.25rem;
+  }
+
+  .breadcrumb-label {
+    max-width: 120px;
+  }
+
+  .breadcrumb-home-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .breadcrumb-separator {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+/* Very small screens - show only last 2 items */
+@media (max-width: 480px) {
+  .breadcrumb-item:not(:nth-last-child(-n+3)) {
+    display: none;
+  }
+
+  .breadcrumb-label {
+    max-width: 100px;
+  }
+}

@@ -1,0 +1,94 @@
+.card {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
+  padding: 1.75rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  width: 100%;
+}
+
+.card-clickable {
+  cursor: pointer;
+}
+
+.card-clickable:hover,
+.card-clickable:focus {
+  border-color: rgba(96, 165, 250, 0.5);
+  box-shadow: 0 20px 70px rgba(15, 23, 42, 0.5);
+  transform: translateY(-2px);
+  outline: none;
+}
+
+.card.card-icon {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.icon-wrapper {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.icon-blue {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+}
+
+.icon-green {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+.icon-orange {
+  background: rgba(251, 146, 60, 0.2);
+  color: #fb923c;
+}
+
+.icon-purple {
+  background: rgba(168, 85, 247, 0.2);
+  color: #a855f7;
+}
+
+.icon-red {
+  background: rgba(248, 113, 113, 0.2);
+  color: #f87171;
+}
+
+.icon-cyan {
+  background: rgba(34, 211, 238, 0.2);
+  color: #22d3ee;
+}
+
+.card.card-icon .card-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.card-status {
+  padding: 1.5rem;
+}
+
+.card-status-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
