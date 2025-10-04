@@ -8,6 +8,18 @@
   gap: 2rem;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .hero {
   text-align: center;
   max-width: 960px;
@@ -22,7 +34,7 @@
 .hero p {
   margin: 0;
   font-size: 1.1rem;
-  color: rgba(226, 232, 240, 0.8);
+  color: rgba(226, 232, 240, 0.9);
 }
 
 .app-layout {
@@ -87,7 +99,7 @@
   gap: 2rem;
 }
 
-@media (min-width: 960px) {
+@media (min-width: 1024px) {
   .app-layout {
     display: grid;
     grid-template-columns: 240px minmax(0, 1fr);
@@ -123,7 +135,7 @@
 
 .page-header p {
   margin: 0;
-  color: rgba(226, 232, 240, 0.75);
+  color: rgba(226, 232, 240, 0.85);
 }
 
 .error-banner {
@@ -134,6 +146,7 @@
   border-radius: 0.75rem;
 }
 
+/* Panel - Legacy name for card component (use .card from components.css for new code) */
 .panel {
   background: rgba(15, 23, 42, 0.7);
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -163,15 +176,19 @@
   gap: 1.5rem;
 }
 
+/* Form container - uses card styling */
 .form {
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
   padding: 1.25rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
 }
 
+/* Notice/Alert - prefer .alert classes from components.css for new code */
 .notice {
   border-radius: 0.75rem;
   padding: 0.85rem 1rem;
@@ -222,7 +239,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 0.82rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.85);
 }
 
 .credential-forms {
@@ -230,19 +247,22 @@
   gap: 1.25rem;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 1024px) {
   .credential-forms {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
+/* Credential block - uses card styling */
 .credential-block {
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
-  background: rgba(15, 23, 42, 0.35);
-  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
   padding: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
 }
 
 .session-form textarea {
@@ -265,7 +285,7 @@
 
 .file-hint {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.8);
+  color: rgba(148, 163, 184, 0.85);
   margin: -0.4rem 0 0;
 }
 
@@ -300,6 +320,7 @@ textarea:focus {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
 }
 
+/* Legacy button styling - prefer .btn classes from components.css for new code */
 button {
   border-radius: 0.75rem;
   border: none;
@@ -310,33 +331,6 @@ button {
   background: rgba(59, 130, 246, 0.85);
   color: #f8fafc;
   transition: background-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.button-row {
-  display: flex;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.form .button-row {
-  justify-content: flex-start;
-}
-
-.checkbox-row {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-size: 0.9rem;
-}
-
-th[role='button'] {
-  cursor: pointer;
-  user-select: none;
-}
-
-th[role='button']:hover,
-th[role='button']:focus-visible {
-  text-decoration: underline;
 }
 
 button:hover:enabled,
@@ -350,6 +344,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Button variants - use .btn-{variant} from components.css for new code */
 .ghost-button {
   background: transparent;
   border: 1px solid rgba(148, 163, 184, 0.45);
@@ -377,11 +372,71 @@ button:disabled {
   box-shadow: 0 10px 25px rgba(148, 163, 184, 0.35);
 }
 
+/* Button layout utilities */
+.button-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.form .button-row {
+  justify-content: flex-start;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+/* Sortable table headers */
+th[role='button'] {
+  cursor: pointer;
+  user-select: none;
+}
+
+th[role='button']:hover,
+th[role='button']:focus-visible {
+  text-decoration: underline;
+}
+
+/* Table wrapper - use .table-container from components.css */
+/* Keeping legacy .table-wrapper for backward compatibility */
 .table-wrapper {
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
   padding: 1.25rem;
-  overflow: auto;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
+}
+
+/* Responsive table inner container */
+.table-responsive {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 0.5rem;
+  position: relative;
+}
+
+/* Custom scrollbar */
+.table-responsive::-webkit-scrollbar {
+  height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 0.5rem;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 0.5rem;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
 }
 
 .panel-header {
@@ -397,7 +452,7 @@ button:disabled {
   align-items: center;
   gap: 0.75rem;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.85);
 }
 
 .filter-indicator {
@@ -477,7 +532,7 @@ button:disabled {
 .filter-field label {
   font-weight: 600;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.8);
+  color: rgba(226, 232, 240, 0.9);
 }
 
 .filter-field input,
@@ -503,7 +558,9 @@ button:disabled {
   align-items: center;
 }
 
-.table-wrapper table {
+/* Table element styling */
+.table-wrapper table,
+.table-responsive table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
@@ -537,15 +594,45 @@ button:disabled {
   }
 }
 
+/* Table cell styling */
 .table-wrapper th,
-.table-wrapper td {
-  padding: 0.65rem 0.75rem;
+.table-wrapper td,
+.table-responsive th,
+.table-responsive td {
+  padding: 0.75rem 1rem;
   text-align: left;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
 }
 
-.table-wrapper tr:last-child td {
+.table-wrapper th,
+.table-responsive th {
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(15, 23, 42, 0.6);
+  white-space: nowrap;
+}
+
+.table-responsive th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.table-wrapper tr:last-child td,
+.table-responsive tr:last-child td {
   border-bottom: none;
+}
+
+/* Zebra striping */
+.table-responsive tbody tr:nth-child(even) {
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.table-responsive tbody tr:nth-child(odd) {
+  background: rgba(15, 23, 42, 0.05);
 }
 
 .task-table tr {
@@ -553,12 +640,42 @@ button:disabled {
   transition: background-color 0.2s ease;
 }
 
-.task-table tr:hover {
-  background: rgba(59, 130, 246, 0.08);
+.task-table tbody tr:hover {
+  background: rgba(59, 130, 246, 0.12);
 }
 
-.task-table tr.active {
-  background: rgba(59, 130, 246, 0.18);
+.task-table tbody tr.active {
+  background: rgba(59, 130, 246, 0.22);
+}
+
+/* Sticky first column for horizontal scroll */
+.sticky-column {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+}
+
+.table-responsive thead .sticky-column {
+  z-index: 30;
+  background: rgba(15, 23, 42, 0.98);
+}
+
+.table-responsive tbody tr:nth-child(even) .sticky-column {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.table-responsive tbody tr:nth-child(odd) .sticky-column {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+.task-table.table-responsive tbody tr:hover .sticky-column {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.task-table.table-responsive tbody tr.active .sticky-column {
+  background: rgba(59, 130, 246, 0.35);
 }
 
 .task-table-skeleton td {
@@ -577,9 +694,10 @@ button:disabled {
 .table-hint {
   margin: 0;
   font-size: 0.85rem;
-  color: rgba(226, 232, 240, 0.65);
+  color: rgba(226, 232, 240, 0.85);
 }
 
+/* Status badges - prefer .badge-status from components.css for new code */
 .status {
   display: inline-flex;
   align-items: center;
@@ -623,7 +741,7 @@ button:disabled {
 
 .empty {
   margin: 0;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.85);
 }
 
 .task-drawer {
@@ -647,7 +765,7 @@ button:disabled {
   position: relative;
   width: min(540px, 100%);
   background: rgba(15, 23, 42, 0.98);
-  border-left: 1px solid rgba(148, 163, 184, 0.2);
+  border-left: 1px solid rgba(148, 163, 184, 0.25);
   padding: 2.5rem 2rem;
   display: flex;
   flex-direction: column;
@@ -699,7 +817,7 @@ button:disabled {
 
 .drawer-subtle {
   margin: 0.75rem 0 0;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.85);
   font-size: 0.9rem;
 }
 
@@ -735,7 +853,7 @@ button:disabled {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.85);
   margin-bottom: 0.25rem;
 }
 
@@ -761,7 +879,7 @@ button:disabled {
 
 .drawer-modal-card {
   background: rgba(15, 23, 42, 0.95);
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.25);
   border-radius: 1rem;
   padding: 1.75rem;
   display: flex;
@@ -770,6 +888,7 @@ button:disabled {
   max-width: 400px;
   width: 100%;
   text-align: left;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
 }
 
 .drawer-modal-card h4 {
@@ -779,7 +898,7 @@ button:disabled {
 
 .drawer-modal-card p {
   margin: 0;
-  color: rgba(226, 232, 240, 0.75);
+  color: rgba(226, 232, 240, 0.85);
   line-height: 1.4;
 }
 
@@ -853,7 +972,7 @@ button:disabled {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: rgba(148, 163, 184, 0.75);
+  color: rgba(148, 163, 184, 0.85);
 }
 
 .logs-metadata dd {
@@ -895,14 +1014,16 @@ button:disabled {
 }
 
 .log-output {
-  background: rgba(15, 23, 42, 0.45);
-  border-radius: 0.75rem;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 1rem;
   padding: 1rem;
   max-height: 320px;
   overflow: auto;
   font-size: 0.85rem;
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   color: rgba(226, 232, 240, 0.9);
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
 }
 
 .notice a {
@@ -923,13 +1044,14 @@ button:disabled {
 .modal {
   background: rgba(15, 23, 42, 0.95);
   border-radius: 1rem;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.25);
   padding: 1.5rem;
   max-width: 460px;
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.35);
 }
 
 .modal-actions {
@@ -940,7 +1062,7 @@ button:disabled {
 
 .meta {
   font-size: 0.75rem;
-  color: rgba(148, 163, 184, 0.7);
+  color: rgba(148, 163, 184, 0.85);
 }
 
 .table-status {
@@ -949,12 +1071,212 @@ button:disabled {
   gap: 0.35rem;
 }
 
-@media (max-width: 600px) {
+/* Responsive breakpoints for tables */
+
+/* Hide less critical columns on tablets (below 1024px) */
+@media (max-width: 1024px) {
+  .hide-tablet {
+    display: none;
+  }
+}
+
+/* Hide additional columns on mobile (below 768px) */
+@media (max-width: 768px) {
+  .hide-mobile {
+    display: none;
+  }
+
+  /* Reduce table font size for better fit */
+  .table-responsive table {
+    font-size: 0.85rem;
+    min-width: 500px;
+  }
+
+  .table-responsive th,
+  .table-responsive td {
+    padding: 0.6rem 0.75rem;
+  }
+
+  /* Stack button rows vertically on mobile */
+  .table-responsive .button-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .table-responsive .button-row button {
+    width: 100%;
+  }
+}
+
+/* Extra small screens (below 480px) */
+@media (max-width: 480px) {
+  .table-responsive table {
+    font-size: 0.8rem;
+    min-width: 400px;
+  }
+
+  .table-responsive th,
+  .table-responsive td {
+    padding: 0.5rem 0.6rem;
+  }
+
+  /* Make status badges smaller */
+  .table-responsive .status {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.6rem;
+  }
+}
+
+@media (max-width: 640px) {
   .hero {
     text-align: left;
   }
 
   .app-shell {
     padding: 2rem 1rem 3rem;
+  }
+}
+
+/* Task Actions Column Styles */
+.task-actions-header {
+  min-width: 200px;
+  text-align: center;
+}
+
+.task-table .task-actions-cell {
+  cursor: default;
+  padding: 0.5rem;
+}
+
+.task-actions {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.action-btn:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* Abort button - Red/Warning */
+.action-btn-abort {
+  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+}
+
+.action-btn-abort:not(:disabled):hover {
+  border-color: rgba(248, 113, 113, 0.75);
+  background: rgba(248, 113, 113, 0.25);
+  box-shadow: 0 4px 12px rgba(248, 113, 113, 0.35);
+}
+
+/* Retry button - Blue/Primary */
+.action-btn-retry {
+  border-color: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.2);
+  color: #dbeafe;
+}
+
+.action-btn-retry:not(:disabled):hover {
+  border-color: rgba(59, 130, 246, 0.75);
+  background: rgba(59, 130, 246, 0.25);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+
+/* Clone button - Green/Success */
+.action-btn-clone {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: rgba(34, 197, 94, 0.2);
+  color: #bbf7d0;
+}
+
+.action-btn-clone:not(:disabled):hover {
+  border-color: rgba(34, 197, 94, 0.75);
+  background: rgba(34, 197, 94, 0.25);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.35);
+}
+
+/* View button - Purple/Info */
+.action-btn-view {
+  border-color: rgba(168, 85, 247, 0.5);
+  background: rgba(168, 85, 247, 0.2);
+  color: #e9d5ff;
+}
+
+.action-btn-view:not(:disabled):hover {
+  border-color: rgba(168, 85, 247, 0.75);
+  background: rgba(168, 85, 247, 0.25);
+  box-shadow: 0 4px 12px rgba(168, 85, 247, 0.35);
+}
+
+/* Hide action text on smaller screens, show only icons */
+@media (max-width: 1280px) {
+  .action-text {
+    display: none;
+  }
+
+  .action-btn {
+    padding: 0.5rem;
+    min-width: 2rem;
+    justify-content: center;
+  }
+
+  .task-actions-header {
+    min-width: 120px;
+  }
+}
+
+/* Further compress on tablets */
+@media (max-width: 1024px) {
+  .task-actions {
+    gap: 0.25rem;
+  }
+
+  .action-btn {
+    padding: 0.4rem;
+  }
+
+  .task-actions-header {
+    min-width: 100px;
+  }
+}
+
+/* On mobile, show actions column with icons only */
+@media (max-width: 768px) {
+  .task-actions-header {
+    min-width: 80px;
+  }
+
+  .action-btn {
+    padding: 0.35rem;
+    font-size: 0.75rem;
   }
 }

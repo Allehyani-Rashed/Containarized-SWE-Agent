@@ -7,6 +7,8 @@ import ProjectDetailPage from './pages/ProjectDetailPage';
 import SettingsPage from './pages/SettingsPage';
 import TaskListPage from './pages/TaskListPage';
 import TaskSubmitPage from './pages/TaskSubmitPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import HelpPage from './pages/HelpPage';
 import './App.css';
 
 function App() {
@@ -27,6 +29,8 @@ function App() {
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
+        <Route path="help" element={<HelpPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
