@@ -17,6 +17,8 @@ class PatLifecycleTests(unittest.TestCase):
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'pat.db'}"
         os.environ["RUNNER_DISABLE_DOCKER"] = "1"
         os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
+        self.previous_pat = os.environ.get("GITLAB_PAT")
+        os.environ.pop("GITLAB_PAT", None)
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -32,6 +34,10 @@ class PatLifecycleTests(unittest.TestCase):
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("PROJECT_CACHE_ROOT", None)
+        if self.previous_pat is None:
+            os.environ.pop("GITLAB_PAT", None)
+        else:
+            os.environ["GITLAB_PAT"] = self.previous_pat
 
     def _register_project(self, client: TestClient) -> int:
         project_root = project_cache_repo_path("https://gitlab.example.com", "example/demo")
@@ -84,8 +90,7 @@ class PatLifecycleTests(unittest.TestCase):
             credential = session.exec(
                 select(IntegrationCredential).where(IntegrationCredential.kind == GITLAB_PAT_KIND)
             ).one()
-            self.assertIsNotNone(credential.token_encrypted)
-            self.assertNotEqual(credential.token_encrypted, "gitlab-token")
+            self.assertEqual(credential.token_encrypted, "gitlab-token")
             self.assertEqual(credential.updated_by, "tester")
 
             audit_entries = session.exec(
@@ -230,39 +235,34 @@ class PatLifecycleTests(unittest.TestCase):
             self.assertEqual(verify_resp.status_code, 400)
             self.assertIn("http", verify_resp.json().get("detail", ""))
 
-    def test_pat_verify_gracefully_handles_decrypt_failures(self) -> None:
-        with TestClient(self.main.app) as client:
-            rotate_resp = client.post("/integrations/pat", json={"token": "gitlab-token"})
-            self.assertEqual(rotate_resp.status_code, 200)
+    def test_pat_status_reads_from_environment(self) -> None:
+        previous = os.environ.get("GITLAB_PAT")
+        os.environ["GITLAB_PAT"] = "env-token"
+        try:
+            with TestClient(self.main.app) as client:
+                status_resp = client.get("/integrations/pat")
+                self.assertEqual(status_resp.status_code, 200)
+                snapshot = status_resp.json()
+                self.assertTrue(snapshot["configured"])
+                self.assertIsNone(snapshot["updated_at"])
+                self.assertIsNone(snapshot["updated_by"])
 
             from sqlmodel import Session, select
 
             from app.app.database import engine
             from app.app.integrations import GITLAB_PAT_KIND
             from app.app.models import IntegrationCredential
-            from app.app.secrets import reset_secret_manager
 
             with Session(engine) as session:
-                credential = session.exec(
+                rows = session.exec(
                     select(IntegrationCredential).where(IntegrationCredential.kind == GITLAB_PAT_KIND)
-                ).one()
-                credential.token_encrypted = "not-a-valid-token"
-                session.add(credential)
-                session.commit()
-
-            reset_secret_manager()
-
-            verify_resp = client.post("/integrations/pat/verify")
-            self.assertEqual(verify_resp.status_code, 400)
-            detail = verify_resp.json().get("detail", "")
-            self.assertIn("could not be decrypted", detail)
-
-            status_resp = client.get("/integrations/pat")
-            self.assertEqual(status_resp.status_code, 200)
-            status_payload = status_resp.json()
-            self.assertFalse(status_payload["configured"])
-            self.assertEqual(status_payload["verification_status"], "error")
-            self.assertIn("could not be decrypted", status_payload["verification_error"] or "")
+                ).all()
+                self.assertFalse(rows)
+        finally:
+            if previous is None:
+                os.environ.pop("GITLAB_PAT", None)
+            else:
+                os.environ["GITLAB_PAT"] = previous
 
 
 if __name__ == "__main__":

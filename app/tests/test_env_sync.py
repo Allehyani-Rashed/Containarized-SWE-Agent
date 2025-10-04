@@ -13,6 +13,8 @@ class EnvSyncTests(unittest.TestCase):
         db_path = Path(self.tmp_dir.name) / "env-sync.db"
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{db_path}"
         os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
+        self.previous_pat = os.environ.get("GITLAB_PAT")
+        os.environ.pop("GITLAB_PAT", None)
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -30,6 +32,10 @@ class EnvSyncTests(unittest.TestCase):
         self.tmp_dir.cleanup()
         os.environ.pop("APP_DATABASE_URL", None)
         os.environ.pop("PROJECT_CACHE_ROOT", None)
+        if self.previous_pat is None:
+            os.environ.pop("GITLAB_PAT", None)
+        else:
+            os.environ["GITLAB_PAT"] = self.previous_pat
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
@@ -50,6 +56,7 @@ class EnvSyncTests(unittest.TestCase):
         self.assertTrue(result.project_created)
         self.assertIsNotNone(result.project_id)
         self.assertIsNone(result.session_bundle_error)
+        self.assertEqual(os.environ.get("GITLAB_PAT"), "glpat-test-token")
 
         from sqlmodel import Session, select
         from app.app.integrations import GITLAB_PAT_KIND

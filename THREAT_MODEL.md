@@ -70,6 +70,7 @@ single-user, local-first deployment described in the project objective.
     values and the scripts avoid `set -x`.
   - `RUNNER_GIT_DRY_RUN=1` enables local smoke tests without pushing to GitLab.
   - Redacted logs are persisted on disk and surfaced through the UI. Snapshot endpoints return non-sensitive metadata (status, branch, model, abort flag) alongside log lines so tooling can audit runs without exposing credentials.
+  - Tokens are stored in plaintext within the orchestrator's credential table for the local deployment profile; protect filesystem access to the SQLite database and `.env` file accordingly.
 - **Residual Risk**: Operators must protect the persisted SQLite database and
   log files, and rotate credentials if compromise is suspected.
 
@@ -78,8 +79,9 @@ single-user, local-first deployment described in the project objective.
 - **Risk**: Session bundles imported from `codex login` include refresh tokens
   and long-lived cookies that could be replayed if exposed.
 - **Mitigations**:
-  - Bundles are encrypted at rest alongside the GitLab PAT using the shared
-    `IntegrationCredential` store.
+  - ChatGPT bundles remain encrypted at rest using the shared
+    `IntegrationCredential` store, while the GitLab PAT stays in plaintext for
+    local deployments.
   - The orchestrator decrypts bundles only in-process, base64 encodes them for
     transit, and redacts both raw and encoded forms from task logs.
   - Runner scripts decode the bundle into `~/.codex/auth.json` inside the

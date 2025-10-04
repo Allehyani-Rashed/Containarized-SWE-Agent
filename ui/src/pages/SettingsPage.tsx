@@ -440,10 +440,11 @@ function SettingsPage() {
               </div>
             </form>
 
-                  <InfoPanel title="Credentials are write-only for security" variant="info" iconColor="blue">
+                  <InfoPanel title="Credential handling" variant="info" iconColor="blue">
                     <p>
-                      GitLab PATs are encrypted and never displayed after storage. Clearing the PAT will prevent new
-                      task submissions until reconfigured.
+                      GitLab PATs are loaded from your local <code>.env</code> file and stored in plaintext inside the
+                      orchestrator process. Clearing the PAT removes it from memory, so new task submissions will fail
+                      until you provide a replacement token.
                     </p>
                   </InfoPanel>
 

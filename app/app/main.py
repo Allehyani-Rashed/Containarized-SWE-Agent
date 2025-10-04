@@ -65,7 +65,6 @@ from .schemas import (
     TaskListResponse,
     TaskRead,
 )
-from .secrets import SecretError
 from .worker import TaskQueueManager
 
 _worker: TaskQueueManager | None = None
@@ -219,14 +218,7 @@ def _resolve_project_gitlab_token(session: Session, project: Project) -> str | N
     project_token = (project.gitlab_token or "").strip()
     if project_token:
         return project_token
-    try:
-        token = get_gitlab_pat_token(session)
-    except SecretError as exc:  # noqa: BLE001 - surface credential failures upstream
-        logger.warning("Failed to decrypt GitLab PAT while listing branches: %s", exc)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unable to decrypt stored GitLab PAT; reconfigure the credential",
-        ) from exc
+    token = get_gitlab_pat_token(session)
     if not token:
         return None
     candidate = token.strip()

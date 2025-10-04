@@ -16,7 +16,7 @@ Containerized Codex Agent is a local-first orchestrator that runs Codex agents i
 - **`codex_runner.py`**: Orchestrates Docker container lifecycle; falls back to local stub if Docker unavailable; streams logs and parses metadata
 - **`project_cache.py`**: Manages deterministic Git clones under `project-cache/<slug>/repo`; supports branch rewinding, cache refresh, and quota enforcement
 - **`sanitizer.py`**: Creates ephemeral workspaces by copying cached repo and filtering files via `.projectsanitize`
-- **`integrations.py`**: Encrypts/decrypts GitLab PATs and ChatGPT session bundles; supports verification via GitLab API
+- **`integrations.py`**: Manages GitLab PATs sourced from `.env` (plaintext in DB) and encrypts ChatGPT session bundles; supports verification via GitLab API
 - **`allowlist.py`**: Normalizes per-project domain allowlists and regenerates Tinyproxy `filter.list`
 - **`proxy_runtime.py`**: Ensures `codex-egress-proxy` compose service and `codex-shared` network are running before tasks start
 - **`database.py`**: SQLModel schema initialization; includes migrations for adding columns (e.g., `target_branch`, `allowlist`)
@@ -28,7 +28,7 @@ Containerized Codex Agent is a local-first orchestrator that runs Codex agents i
 - **`pages/TaskListPage.tsx`**: Paginated task table with status/model/branch filters, abort/delete modals, log viewer
 - **`pages/ProjectsPage.tsx`**: Sortable project grid showing repository URL, default branch, allowlist status, credential signals, cache metadata
 - **`pages/ProjectDetailPage.tsx`**: Per-project view with credential summary, recent tasks, cache refresh command
-- **`pages/SettingsPage.tsx`**: PAT/session management with store/clear/verify flows and write-only explanations
+- **`pages/SettingsPage.tsx`**: PAT/session management with store/clear/verify flows and `.env`-backed guidance
 
 ### Runner (`runner/`)
 - **`Dockerfile`**: Builds `local-codex-runner:latest` with hardened settings (read-only root, no-new-privileges, tmpfs mounts, dropped capabilities)
@@ -151,7 +151,7 @@ python3 scripts/migrate_projectsanitize.py [path]
 8. **Finalize**: Worker parses `CODEX_RESULT.json` for branch/MR URL, persists to DB, marks task done/failed
 
 ### Credential Lifecycle
-- **Storage**: PATs and session bundles encrypted via Fernet with key from `ENCRYPTION_SECRET_KEY` env
+- **Storage**: GitLab PATs are loaded from `.env` and stored plaintext in the credential table for local deployments, while ChatGPT session bundles remain encrypted via Fernet.
 - **Caching**: Worker loads credentials once at startup, invalidates on credential rotation events
 - **Propagation**: Runner receives PAT via `GITLAB_TOKEN` env; session bundle base64-encoded in `CODEX_SESSION_BUNDLE_B64`
 - **Verification**: `/integrations/pat/verify` tests PAT against GitLab API, records host/timestamp/status

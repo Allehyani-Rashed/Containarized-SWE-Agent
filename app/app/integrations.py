@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -12,7 +13,7 @@ from sqlmodel import Session, select
 
 from .models import AuditLog, IntegrationCredential, Project
 from .schemas import GitLabPATStatus
-from .secrets import SecretError, get_secret_manager
+from .secrets import get_secret_manager
 
 GITLAB_PAT_KIND = "gitlab_pat"
 CHATGPT_SESSION_KIND = "chatgpt_session"
@@ -49,7 +50,7 @@ def _ensure_credential(session: Session) -> IntegrationCredential:
 def get_gitlab_pat_status(session: Session) -> GitLabPATStatus:
     pat_credential = _get_credential(session, GITLAB_PAT_KIND)
     session_credential = _get_credential(session, CHATGPT_SESSION_KIND)
-    pat_configured = bool(pat_credential and pat_credential.token_encrypted)
+    pat_configured = bool(get_gitlab_pat_token(session))
     session_configured = bool(session_credential and session_credential.token_encrypted)
 
     active_credential = "session" if session_configured else "none"
@@ -70,17 +71,19 @@ def get_gitlab_pat_status(session: Session) -> GitLabPATStatus:
 
 
 def get_gitlab_pat_token(session: Session) -> Optional[str]:
+    env_token = _gitlab_pat_from_env()
+    if env_token:
+        return env_token
     credential = _get_credential(session, GITLAB_PAT_KIND)
     if credential is None or not credential.token_encrypted:
         return None
-    manager = get_secret_manager()
-    return manager.decrypt(credential.token_encrypted)
+    token = credential.token_encrypted.strip()
+    return token or None
 
 
 def set_gitlab_pat_token(session: Session, token: str, updated_by: Optional[str]) -> IntegrationCredential:
     credential = _ensure_credential(session)
-    manager = get_secret_manager()
-    credential.token_encrypted = manager.encrypt(token)
+    credential.token_encrypted = token
     credential.updated_at = datetime.now(timezone.utc)
     credential.updated_by = _normalize_actor(updated_by)
     credential.verification_status = None
@@ -89,6 +92,7 @@ def set_gitlab_pat_token(session: Session, token: str, updated_by: Optional[str]
     credential.verification_host = None
     session.add(credential)
     _record_audit(session, "gitlab_pat.stored", credential.updated_by, details=None)
+    os.environ["GITLAB_PAT"] = token
     return credential
 
 
@@ -103,6 +107,7 @@ def clear_gitlab_pat_token(session: Session, updated_by: Optional[str]) -> Integ
     credential.verification_host = None
     session.add(credential)
     _record_audit(session, "gitlab_pat.cleared", credential.updated_by, details=None)
+    os.environ.pop("GITLAB_PAT", None)
     return credential
 
 
@@ -232,26 +237,7 @@ def verify_gitlab_pat(
     requested_host: Optional[str],
 ) -> GitLabPATStatus:
     normalized_actor = _normalize_actor(actor)
-    try:
-        token = get_gitlab_pat_token(session)
-    except SecretError as exc:
-        credential = _ensure_credential(session)
-        # Stored ciphertext cannot be decrypted with the active key; clear and flag it.
-        credential.token_encrypted = None
-        credential.updated_at = datetime.now(timezone.utc)
-        credential.updated_by = normalized_actor
-        credential.verification_status = VERIFICATION_STATUS_ERROR
-        credential.verification_checked_at = datetime.now(timezone.utc)
-        credential.verification_error = "Stored GitLab PAT could not be decrypted; re-enter the token"
-        credential.verification_host = None
-        session.add(credential)
-        details = json.dumps({"status": "decrypt_failed"})
-        _record_audit(session, "gitlab_pat.decrypt_failed", normalized_actor, details)
-        session.commit()
-        raise GitLabPATVerificationError(
-            "Stored GitLab PAT could not be decrypted. Clear the credential and add a new token.",
-        ) from exc
-
+    token = get_gitlab_pat_token(session)
     if not token:
         raise GitLabPATVerificationError("GitLab PAT is not configured")
 
@@ -276,6 +262,14 @@ def verify_gitlab_pat(
     session.commit()
 
     return get_gitlab_pat_status(session)
+
+
+def _gitlab_pat_from_env() -> Optional[str]:
+    value = os.environ.get("GITLAB_PAT")
+    if value is None:
+        return None
+    candidate = value.strip()
+    return candidate or None
 
 
 def _resolve_gitlab_host(session: Session, requested_host: Optional[str]) -> str:

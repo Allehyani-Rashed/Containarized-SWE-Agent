@@ -40,7 +40,6 @@ from .project_cache import (
 )
 from .proxy_runtime import ensure_proxy_stack
 from .sanitizer import sanitize_workspace
-from .secrets import SecretError
 
 LOG_POLL_INTERVAL_SECONDS = 0.5
 BRANCH_PREFIX = "codex/task"
@@ -299,16 +298,7 @@ class TaskQueueManager:
                     codex_reasoning_effort = task_effort
                 else:
                     codex_reasoning_effort = default_reasoning_effort()
-                try:
-                    gitlab_token = self._resolve_gitlab_token(session)
-                except SecretError as exc:
-                    self._append_log(task_id, f"GitLab credential decryption failed: {exc}")
-                    task.status = TaskStatus.failed
-                    task.finished_at = datetime.now(timezone.utc)
-                    session.add(task)
-                    session.commit()
-                    self._mark_complete(task_id)
-                    return
+                gitlab_token = self._resolve_gitlab_token(session)
                 try:
                     session_bundle = self._resolve_chatgpt_session_bundle(session)
                 except ChatGPTSessionError as exc:
