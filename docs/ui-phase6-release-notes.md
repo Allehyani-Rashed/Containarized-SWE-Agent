@@ -2,7 +2,7 @@
 
 ## Highlights
 - Task history now exposes status/model/branch filters backed by the paginated `/tasks` endpoint, with loading skeletons and accessible modal flows so operators can triage runs without losing context.
-- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include task status, branch, Codex model, and abort-request metadata; both the Tasks UI and `scripts/test_docker_path.py` surface the snapshot summary ahead of the raw log lines.
+- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include task status, branch, base branch, Codex model, abort-request metadata, and credential availability timestamps; both the Tasks UI and `scripts/test_docker_path.py` surface the snapshot summary ahead of the raw log lines.
 - `scripts/test_docker_path.py` prints the snapshot metadata in addition to log lines so dry-run smoke tests mirror the Tasks view.
 
 ## Migration Checklist

@@ -12,7 +12,9 @@ Containerized Codex Agent is a local-first orchestrator that runs Codex agents i
 
 ### Backend (`app/`)
 - **`main.py`**: FastAPI app with routes for projects, tasks, integrations (PAT/session management), and log streaming
-- **`worker.py`**: `TaskQueueManager` — single-consumer queue that processes tasks sequentially, manages log storage/streaming, and handles credential caching
+- **`worker.py`**: `TaskQueueManager` — queue that runs tasks in parallel by default (pool defaults to 10 workers), honours `WORKER_ENABLE_PARALLEL=0` to force serial execution, enforces per-project concurrency limits, manages log streaming, and handles credential caching
+- **`settings_store.py`**: Persists global concurrency limits (`/settings/concurrency`) and resolves defaults from environment
+- **`worker_state.py`**: Tracks per-task runtime data (logs, credential status, proxy allowlists, abort markers) for streaming and API snapshots
 - **`codex_runner.py`**: Orchestrates Docker container lifecycle; falls back to local stub if Docker unavailable; streams logs and parses metadata
 - **`project_cache.py`**: Manages deterministic Git clones under `project-cache/<slug>/repo`; supports branch rewinding, cache refresh, and quota enforcement
 - **`sanitizer.py`**: Creates ephemeral workspaces by copying cached repo and filtering files via `.projectsanitize`
@@ -109,6 +111,18 @@ scripts/codex pat clear-chatgpt
 
 # Dry-run mode (no API calls)
 RUNNER_GIT_DRY_RUN=1 scripts/codex pat store
+```
+
+### Worker concurrency
+```bash
+# Show current per-project concurrency limit and worker pool state
+scripts/codex settings concurrency
+
+# Update the global per-project concurrency cap
+scripts/codex settings set-concurrency --project-limit 3
+
+# Disable parallelism by setting WORKER_ENABLE_PARALLEL=0
+export WORKER_ENABLE_PARALLEL=0
 ```
 
 ### Project cache operations

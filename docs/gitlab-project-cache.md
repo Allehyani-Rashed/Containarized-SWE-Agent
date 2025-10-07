@@ -11,6 +11,12 @@ This document captures the proposed changes for automatically cloning and refres
 
 Automation helper: run `python3 scripts/run_codex_plan.py` to drive each phase sequentially through the Codex CLI, marking checkboxes as work completes (use `--plan <path>` to target other plans).
 
+## Implementation Notes
+- Cache refreshes and related Prometheus instrumentation are centralised in `app/app/metrics.py`. The helper now wraps collectors in module-level singletons so attempts to double-register a metric fail fast in tests—see `app/tests/test_metrics.py` for coverage.
+- Worker concurrency controls apply to cache bootstrap jobs just like task runners. Operators can set the per-project ceiling via Settings → Global Concurrency or the `scripts/codex settings set-concurrency` CLI; details live in `docs/operations/parallel-tasks.md`.
+- UI surfaces cache health exclusively through the modern `ProjectsPage.tsx` component (fed by `useProjectsData`). Any tooling or docs that previously referenced `ProjectsPageOld.tsx` should be retired.
+- CLI flows favour the bundled Codex runner invoked as `codex exec --cd /work --skip-git-repo-check --yolo -`; helper scripts (`scripts/project_cache.py`, `scripts/test_docker_path.py`) already shell out using that contract so operator docs should mirror it when describing bespoke automation.
+
 ## Phase Plan
 
 ### Phase 1 – Establish Cache Infrastructure

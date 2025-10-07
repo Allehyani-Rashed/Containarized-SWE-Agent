@@ -69,7 +69,7 @@ single-user, local-first deployment described in the project objective.
   - Tokens enter the container via environment variables but logs redact the
     values and the scripts avoid `set -x`.
   - `RUNNER_GIT_DRY_RUN=1` enables local smoke tests without pushing to GitLab.
-  - Redacted logs are persisted on disk and surfaced through the UI. Snapshot endpoints return non-sensitive metadata (status, branch, model, abort flag) alongside log lines so tooling can audit runs without exposing credentials.
+  - Redacted logs are persisted on disk and surfaced through the UI. Snapshot endpoints return non-sensitive metadata (status, branch, base branch, model, abort flag, and credential availability timestamps) alongside log lines so tooling can audit runs without exposing secrets.
   - Tokens are stored in plaintext within the orchestrator's credential table for the local deployment profile; protect filesystem access to the SQLite database and `.env` file accordingly.
 - **Residual Risk**: Operators must protect the persisted SQLite database and
   log files, and rotate credentials if compromise is suspected.
@@ -100,7 +100,7 @@ single-user, local-first deployment described in the project objective.
 - **Mitigations**:
   - `mem_limit` and `pids_limit` defaults guard the container.
   - tmpfs-backed writable paths limit disk impact on the host.
-  - The task queue runs one task at a time, containing blast radius.
+  - The task queue runs with a 10-task pool by default while still enforcing the global per-project limit stored in `/settings/concurrency` (alongside per-project overrides). Set `WORKER_ENABLE_PARALLEL=0` if operators need to fall back to single-task execution.
 - **Residual Risk**: Excessive CPU consumption is throttled only by the Docker
   runtime; operators can further limit via cgroup CPU quotas if necessary.
 

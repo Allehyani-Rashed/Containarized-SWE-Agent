@@ -13,6 +13,8 @@
   - At least one project with valid PAT/codex credentials to verify happy paths.
   - Ability to mock or seed task runs (pending, running, done, failed, aborted) for list/filter coverage.
   - Clipboard access permitted by the test runner to validate copy helpers (with fallbacks captured when blocked).
+- The runner image now ships the real Codex CLI; flows that execute tasks should expect `codex exec --cd /work --skip-git-repo-check --yolo -` to appear in logs. Playwright assertions can key off the success/failure markers surfaced in streamed task logs.
+- For component ownership and layout details, cross-reference `docs/ui-phase6-release-notes.md`—it documents the current `ProjectsPage`/`ProjectsDetail` architecture backed by `useProjectsData`.
 
 ## Global Navigation & Layout
 1. **Primary nav renders and routes**
@@ -62,11 +64,12 @@
    - For completed task: trigger Delete modal, confirm button disables during API call, row removed after success.
    - Error handling when API fails (show error banner, modal stays open).
 7. **Log snapshot metadata**
-   - Ensure metadata chip(s) render (status/model/branch/abort) when viewing logs of completed task.
+   - Ensure metadata summary renders branch/base branch/model/status/abort flags alongside credential availability timestamps when viewing logs of completed tasks.
 8. **Deep linking**
    - Navigate to `/tasks` with state `focusTaskId`; confirm drawer auto-opens and highlighted row scrolls into view.
 
 ## Projects Page
+All Projects page scenarios target the modern `ProjectsPage.tsx` implementation and the `ProjectsProvider`/`useProjectsData` hook. Legacy backups (`ProjectsPageOld.tsx`) were removed, so selectors should align with the new cards/table markup described in `docs/ui-phase6-release-notes.md`.
 1. **Table presentation & sorting**
    - Columns render (host, branch, allowlist status, credential signals, last activity, actions).
    - Toggle sort on each column both directions; data reorders correctly.
@@ -103,22 +106,31 @@
 5. **Error handling**
    - Invalid project ID shows error banner and no crash.
 
+## Further Reading
+- `docs/ui-e2e-playwright-roadmap.md` for phased automation milestones.
+- `docs/backend-route-catalogue.md` for API payload definitions used in mocked responses.
+- `docs/operations/parallel-tasks.md` to understand concurrency controls that the Settings scenarios exercise.
+
 ## Settings Page
 1. **Credential overview**
    - Status badges reflect PAT/session configuration; tooltips present; warning banner when PAT missing.
 2. **Store PAT flow**
-   - Require token input; optional actor label; success resets form and updates overview.
+   - Require token input; success resets form and updates overview.
    - Server error surfaces as error banner without clearing form.
 3. **Verify PAT**
    - Disabled when no PAT; on click, spinner while verifying; success/warning notices captured; failure message includes backend error text.
 4. **Clear PAT**
-   - Button opens confirmation modal; requires actor optional; ensures tasks blocked warning shown afterwards.
+   - Button opens confirmation modal; ensures tasks blocked warning shown afterwards.
 5. **Import Session bundle**
-   - Paste JSON into textarea or upload file; file picker reads content into form (filename recorded); success updates overview.
-   - Reader errors handled gracefully.
-6. **Clear Session**
+    - Paste JSON into textarea or upload file; file picker reads content into form (filename recorded); success updates overview.
+    - Reader errors handled gracefully.
+6. **Global concurrency**
+   - Card loads worker pool metadata (project limit, effective limit, pool size, parallel flag) without crashing when API errors occur.
+   - Submitting a positive integer updates the limit, shows success toast/message, and refreshes the displayed values without stale numbers.
+   - Invalid input (empty, non-integer, <1) returns inline validation, leaving existing data untouched.
+7. **Clear Session**
    - Confirmation modal clears bundle, resets overview; ensures PAT overview unaffected.
-7. **Periodic refresh**
+8. **Periodic refresh**
    - Verify status auto-refresh (15s) updates timestamps without manual action (mock backend change mid-test).
 
 ## Cross-Cutting Quality Checks

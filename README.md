@@ -1,6 +1,6 @@
 # Containerized Codex Agent
 
-A local-first playground for the Codex runner: give it a prompt, it sanitizes your repo, executes inside Docker with a locked-down proxy, and prepares a GitLab merge request.
+A local-first playground for the Codex runner: give it a prompt, it sanitizes your repo, executes inside Docker with a locked-down proxy, and prepares a GitLab merge request or commits directly to a branch—your choice per task.
 
 ## What You Get
 - FastAPI backend that schedules/namespaces each task.
@@ -64,7 +64,7 @@ curl -sS -X POST "$BACKEND_API_BASE/tasks" \
 JSON
 ```
 Watch the run live in the dashboard. When Docker is available the orchestrator spins up the runner image and streams its output; locally you can dry-run with `RUNNER_GIT_DRY_RUN=1`.
-Provide `target_branch` when you need to branch from something other than the project's default, `branch_name` to pin the generated task branch, `mr_title` to override the auto-generated merge request title, plus `codex_model` (defaults to `gpt-5-codex`) and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to control the model or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
+Provide `target_branch` when you need to branch from something other than the project's default, `branch_name` to pin the generated task branch, `change_mode` (`merge_request` or `branch_commit`) to decide whether Codex opens a merge request or pushes directly to a branch, `mr_title`/commit message copy, plus `codex_model` (defaults to `gpt-5-codex`) and `codex_reasoning_effort` (`low`/`medium`/`high`) if you want Codex to control the model or reasoning profile; the Tasks view surfaces those fields and the log snapshot API echoes them back for tooling like `scripts/test_docker_path.py`.
 
 ## Everyday Commands
 - `make dev` – run backend + UI together.
@@ -74,7 +74,8 @@ Provide `target_branch` when you need to branch from something other than the pr
 - `make setup` – run the full quickstart bootstrap (build runner, install deps, start proxy).
 - `python3 scripts/test_docker_path.py --disable-docker` – quick smoke test of the workflow.
 - `make threat-scan` – verifies container guardrails and breakout probes.
-- `scripts/codex pat store|clear|import-chatgpt` – manage GitLab PATs or Codex session bundles.
+- `scripts/codex pat store|clear|import-chatgpt` – manage GitLab PATs or Codex session bundles; verify connectivity via Settings → Verify PAT (or `curl -X POST "$BACKEND_API_BASE/integrations/pat/verify"`).
+- `scripts/codex settings concurrency|set-concurrency --project-limit <n>` – inspect or update the global per-project concurrency cap enforced by the worker.
 - `python3 scripts/project_cache.py --refresh --project-id <id>` – repair or refresh cached clones at `project-cache/<slug>/repo` without touching sanitised workspaces.
 
 ## Good To Know
@@ -83,9 +84,10 @@ Provide `target_branch` when you need to branch from something other than the pr
 - Large build artefacts can bloat sanitized workspaces—prune with `git clean -fdx` or update `.projectsanitize` (legacy `.codexignore`) before long runs.
 - Cache issues are resolved from the deterministic clone under `project-cache/<slug>/repo`; run `scripts/project_cache.py --refresh` (optionally with `--project-id`) to rebuild it instead of editing `.env` or exporting legacy path variables.
 - Secret storage intentionally uses a shared static Fernet key for local-only setups; replace it with an environment-sourced secret before any shared or cloud deployment.
-- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, base branch, Codex model, and whether an abort was requested so operator tooling can annotate history without another API call.
+- Log snapshots (`GET /tasks/{id}/logs?follow=0`) include the task status, branch, base branch, Codex model, abort flag, and credential availability timestamps so operator tooling can annotate history without another API call.
 - The project cache is rewound to the task's base branch before each run. Switching between `main` and, say, `release` reuses the existing clone and only performs a fetch/reset for the requested branch.
 - Use `python3 scripts/migrate_projectsanitize.py [path]` to rename legacy `.codexignore` files; the helper merges entries so sanitized workspaces stay lean.
+- Parallel execution is enabled by default (`WORKER_MAX_CONCURRENCY` defaults to 10). Set `WORKER_ENABLE_PARALLEL=0` if you need to run tasks serially. Adjust the per-project concurrency cap globally from Settings → Global Concurrency, `PATCH /settings/concurrency`, or `scripts/codex settings set-concurrency`. See `docs/operations/parallel-tasks.md` for the enablement checklist and observability expectations.
 - Threat model details and hardening expectations live in `THREAT_MODEL.md`.
 
 ## UI E2E Smoke Test
@@ -107,5 +109,12 @@ Provide `target_branch` when you need to branch from something other than the pr
 - `proxy/` – Tinyproxy configuration.
 - `scripts/` – Automation helpers, including `quickstart.sh` and PAT tooling.
 - `workspaces/` – Ephemeral sanitized task directories (ignored by git).
+
+## Architecture & Key Docs
+- Backend orchestration lives under `app/app`; runner-side scripts (including the pinned Codex CLI bootstrap invoked via `codex exec --cd /work --skip-git-repo-check --yolo -`) sit in `runner/`, and UI components consume backend data through typed hooks like `useProjectsData` so `ProjectsPage.tsx` stays the single source of truth for project dashboards.
+- Concurrency controls are shared across the Settings UI, REST API, and CLI helpers. Review `docs/operations/parallel-tasks.md` for tuning guidance and `scripts/codex settings concurrency|set-concurrency` for day-to-day administration.
+- GitLab project cache internals—clone layout, refresh routines, troubleshooting—are documented in `docs/gitlab-project-cache.md` alongside release notes in `docs/gitlab-project-cache-release-notes.md`.
+- UI automation details (Playwright roadmap, testing plan, and component responsibilities) live in `docs/ui-e2e-testing-plan.md` and `docs/ui-e2e-playwright-roadmap.md`. They complement the component breakdown captured in `docs/ui-phase6-release-notes.md`.
+- REST endpoint affordances (for scripting or integrations) are catalogued in `docs/backend-route-catalogue.md`.
 
 Have fun automating your repos! If something looks off, check the live task log stream, rerun with `--keep-workspace` on `scripts/test_docker_path.py`, and peek into the captured snapshot.
