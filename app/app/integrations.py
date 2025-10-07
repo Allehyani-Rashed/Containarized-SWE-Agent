@@ -4,16 +4,19 @@ import json
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from threading import Lock
+from typing import Optional, Sequence
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from sqlmodel import Session, select
 
-from .models import AuditLog, IntegrationCredential, Project
+from .models import IntegrationCredential, Project
 from .schemas import GitLabPATStatus
 from .secrets import get_secret_manager
+
+from .services.audit import normalize_actor, record_audit_event
 
 GITLAB_PAT_KIND = "gitlab_pat"
 CHATGPT_SESSION_KIND = "chatgpt_session"
@@ -34,6 +37,87 @@ class ChatGPTSessionMaterial:
     raw: str
     expires_at: Optional[datetime]
     token_preview: Optional[str]
+
+
+class CredentialRuntimeCache:
+    """Thread-safe cache for integration credentials used by the worker."""
+
+    def __init__(self) -> None:
+        self._lock = Lock()
+        self._gitlab_token_value: str = ""
+        self._gitlab_token_loaded = False
+        self._gitlab_available = False
+
+        self._chatgpt_material: ChatGPTSessionMaterial | None = None
+        self._chatgpt_loaded = False
+        self._chatgpt_available = False
+
+    # GitLab PAT --------------------------------------------------------
+
+    def resolve_gitlab_token(self, session: Session) -> tuple[str, bool]:
+        """Return the cached GitLab PAT and whether availability changed."""
+
+        with self._lock:
+            if self._gitlab_token_loaded:
+                return self._gitlab_token_value, False
+
+        token = get_gitlab_pat_token(session) or ""
+        available = bool(token)
+        with self._lock:
+            previous_available = self._gitlab_available
+            self._gitlab_token_value = token
+            self._gitlab_token_loaded = True
+            self._gitlab_available = available
+        return token, available != previous_available
+
+    def clear_gitlab_cache(self) -> None:
+        with self._lock:
+            self._gitlab_token_value = ""
+            self._gitlab_token_loaded = False
+            self._gitlab_available = False
+
+    def gitlab_available(self) -> bool:
+        with self._lock:
+            return self._gitlab_available
+
+    def gitlab_loaded(self) -> bool:
+        with self._lock:
+            return self._gitlab_token_loaded
+
+    # ChatGPT session ---------------------------------------------------
+
+    def resolve_chatgpt_session(
+        self,
+        session: Session,
+    ) -> tuple[ChatGPTSessionMaterial | None, bool]:
+        """Return cached ChatGPT session bundle and availability delta."""
+
+        with self._lock:
+            if self._chatgpt_loaded:
+                return self._chatgpt_material, False
+
+        material = get_chatgpt_session_bundle(session)
+        available = material is not None
+        with self._lock:
+            previous_available = self._chatgpt_available
+            self._chatgpt_material = material
+            self._chatgpt_loaded = True
+            self._chatgpt_available = available
+        return material, available != previous_available
+
+    def clear_chatgpt_cache(self) -> None:
+        with self._lock:
+            self._chatgpt_material = None
+            self._chatgpt_loaded = False
+            self._chatgpt_available = False
+
+    def chatgpt_available(self) -> bool:
+        with self._lock:
+            return self._chatgpt_available
+
+    def chatgpt_loaded(self) -> bool:
+        with self._lock:
+            return self._chatgpt_loaded
 
 
 def _ensure_credential(session: Session) -> IntegrationCredential:
@@ -74,6 +158,7 @@ def get_gitlab_pat_token(session: Session) -> Optional[str]:
     env_token = _gitlab_pat_from_env()
     if env_token:
         return env_token
+
     credential = _get_credential(session, GITLAB_PAT_KIND)
     if credential is None or not credential.token_encrypted:
         return None
@@ -81,32 +166,45 @@ def get_gitlab_pat_token(session: Session) -> Optional[str]:
     return token or None
 
 
-def set_gitlab_pat_token(session: Session, token: str, updated_by: Optional[str]) -> IntegrationCredential:
+def set_gitlab_pat_token(
+    session: Session,
+    token: str,
+    updated_by: Optional[str],
+    *,
+    affected_task_ids: Optional[Sequence[int]] = None,
+) -> IntegrationCredential:
     credential = _ensure_credential(session)
     credential.token_encrypted = token
     credential.updated_at = datetime.now(timezone.utc)
-    credential.updated_by = _normalize_actor(updated_by)
+    credential.updated_by = normalize_actor(updated_by)
     credential.verification_status = None
     credential.verification_checked_at = None
     credential.verification_error = None
     credential.verification_host = None
     session.add(credential)
-    _record_audit(session, "gitlab_pat.stored", credential.updated_by, details=None)
+    detail = _format_task_detail(affected_task_ids)
+    record_audit_event(session, "gitlab_pat.stored", credential.updated_by, details=detail)
     os.environ["GITLAB_PAT"] = token
     return credential
 
 
-def clear_gitlab_pat_token(session: Session, updated_by: Optional[str]) -> IntegrationCredential:
+def clear_gitlab_pat_token(
+    session: Session,
+    updated_by: Optional[str],
+    *,
+    affected_task_ids: Optional[Sequence[int]] = None,
+) -> IntegrationCredential:
     credential = _ensure_credential(session)
     credential.token_encrypted = None
     credential.updated_at = datetime.now(timezone.utc)
-    credential.updated_by = _normalize_actor(updated_by)
+    credential.updated_by = normalize_actor(updated_by)
     credential.verification_status = None
     credential.verification_checked_at = None
     credential.verification_error = None
     credential.verification_host = None
     session.add(credential)
-    _record_audit(session, "gitlab_pat.cleared", credential.updated_by, details=None)
+    detail = _format_task_detail(affected_task_ids)
+    record_audit_event(session, "gitlab_pat.cleared", credential.updated_by, details=detail)
     os.environ.pop("GITLAB_PAT", None)
     return credential
 
@@ -189,7 +287,13 @@ def _parse_session_bundle(raw_bundle: str) -> ChatGPTSessionMaterial:
     return ChatGPTSessionMaterial(raw=raw_bundle, expires_at=expires_at, token_preview=token_preview)
 
 
-def set_chatgpt_session_bundle(session: Session, bundle: str, updated_by: Optional[str]) -> IntegrationCredential:
+def set_chatgpt_session_bundle(
+    session: Session,
+    bundle: str,
+    updated_by: Optional[str],
+    *,
+    affected_task_ids: Optional[Sequence[int]] = None,
+) -> IntegrationCredential:
     material = _parse_session_bundle(bundle)
     if material.expires_at is not None and material.expires_at <= datetime.now(timezone.utc):
         expires_str = material.expires_at.isoformat()
@@ -199,19 +303,28 @@ def set_chatgpt_session_bundle(session: Session, bundle: str, updated_by: Option
     manager = get_secret_manager()
     credential.token_encrypted = manager.encrypt(material.raw)
     credential.updated_at = datetime.now(timezone.utc)
-    credential.updated_by = _normalize_actor(updated_by)
+    credential.updated_by = normalize_actor(updated_by)
     session.add(credential)
-    _record_audit(session, "chatgpt_session.rotated", credential.updated_by, details=None)
+    detail = _format_task_detail(affected_task_ids)
+    record_audit_event(session, "chatgpt_session.rotated", credential.updated_by, details=detail)
+    os.environ["CHATGPT_SESSION_BUNDLE"] = material.raw
     return credential
 
 
-def clear_chatgpt_session_bundle(session: Session, updated_by: Optional[str]) -> IntegrationCredential:
+def clear_chatgpt_session_bundle(
+    session: Session,
+    updated_by: Optional[str],
+    *,
+    affected_task_ids: Optional[Sequence[int]] = None,
+) -> IntegrationCredential:
     credential = _ensure_session_credential(session)
     credential.token_encrypted = None
     credential.updated_at = datetime.now(timezone.utc)
-    credential.updated_by = _normalize_actor(updated_by)
+    credential.updated_by = normalize_actor(updated_by)
     session.add(credential)
-    _record_audit(session, "chatgpt_session.cleared", credential.updated_by, details=None)
+    detail = _format_task_detail(affected_task_ids)
+    record_audit_event(session, "chatgpt_session.cleared", credential.updated_by, details=detail)
+    os.environ.pop("CHATGPT_SESSION_BUNDLE", None)
     return credential
 
 
@@ -236,7 +349,7 @@ def verify_gitlab_pat(
     actor: Optional[str],
     requested_host: Optional[str],
 ) -> GitLabPATStatus:
-    normalized_actor = _normalize_actor(actor)
+    normalized_actor = normalize_actor(actor)
     token = get_gitlab_pat_token(session)
     if not token:
         raise GitLabPATVerificationError("GitLab PAT is not configured")
@@ -251,12 +364,12 @@ def verify_gitlab_pat(
         credential.verification_status = VERIFICATION_STATUS_VERIFIED
         credential.verification_error = None
         details = json.dumps({"host": host, "status": "verified"})
-        _record_audit(session, "gitlab_pat.verified", normalized_actor, details)
+        record_audit_event(session, "gitlab_pat.verified", normalized_actor, details)
     else:
         credential.verification_status = VERIFICATION_STATUS_ERROR
         credential.verification_error = error_message
         details = json.dumps({"host": host, "status": "error", "error": error_message})
-        _record_audit(session, "gitlab_pat.verify_failed", normalized_actor, details)
+        record_audit_event(session, "gitlab_pat.verify_failed", normalized_actor, details)
 
     session.add(credential)
     session.commit()
@@ -336,13 +449,14 @@ def _safe_error_message(message: str, max_length: int = 240) -> str:
     return f"{clean[: max_length - 1]}…"
 
 
-def _record_audit(session: Session, action: str, actor: Optional[str], details: Optional[str]) -> None:
-    event = AuditLog(action=action, actor=actor, details=details)
-    session.add(event)
-
-
-def _normalize_actor(actor: Optional[str]) -> Optional[str]:
-    if actor is None:
+def _format_task_detail(task_ids: Optional[Sequence[int]]) -> Optional[str]:
+    if not task_ids:
         return None
-    actor = actor.strip()
-    return actor or None
+    try:
+        normalized = sorted({int(task_id) for task_id in task_ids})
+    except Exception:
+        normalized = [str(task_id) for task_id in task_ids]
+        joined = ",".join(normalized)
+        return f"active_tasks={joined}"
+    joined = ",".join(str(task_id) for task_id in normalized)
+    return f"active_tasks={joined}"

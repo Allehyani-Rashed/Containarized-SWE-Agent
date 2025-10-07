@@ -414,6 +414,124 @@ def _bootstrap_ensure_project(api_base: str, args: argparse.Namespace, actor: Op
     return created
 
 
+def tasks_status(args: argparse.Namespace) -> int:
+    api_base = _resolve_api_base(args.api_base)
+    concurrency = _api_request(api_base, "GET", "/settings/concurrency")
+    snapshot = _api_request(api_base, "GET", "/projects")
+    projects: List[Dict[str, Any]] = snapshot if isinstance(snapshot, list) else []
+
+    if args.project_id is not None:
+        projects = [p for p in projects if p.get("id") == args.project_id]
+
+    if args.json:
+        output = {"projects": projects}
+        if isinstance(concurrency, dict):
+            output["concurrency"] = concurrency
+        print(json.dumps(output, indent=2))
+        return 0
+
+    if not projects:
+        print("No projects found")
+        return 0
+
+    if isinstance(concurrency, dict):
+        project_limit = concurrency.get("project_limit")
+        effective_limit = concurrency.get("effective_project_limit")
+        worker_pool = concurrency.get("worker_pool_size")
+        parallel_enabled = concurrency.get("parallel_enabled")
+        print(
+            "Global project concurrency limit: {limit}".format(
+                limit=project_limit,
+            )
+        )
+        if effective_limit is not None and effective_limit != project_limit:
+            print(f"Effective runtime limit: {effective_limit}")
+        print(
+            "Worker pool size: {size} (parallel {state})".format(
+                size=worker_pool,
+                state="enabled" if parallel_enabled else "disabled",
+            )
+        )
+        print("")
+
+    for project in projects:
+        project_id = project.get("id")
+        name = project.get("name") or f"Project {project_id}"
+        active = project.get("active_task_count")
+        total = project.get("total_task_count")
+        last_active = project.get("last_active_count")
+
+        print(f"[{project_id}] {name}")
+        print(f"  Active tasks (DB): {active} / {total}")
+        print(
+            "  Runtime workers: {current}".format(
+                current=last_active if last_active is not None else "--",
+            )
+        )
+        print("")
+
+    return 0
+
+
+def settings_show_concurrency(args: argparse.Namespace) -> int:
+    api_base = _resolve_api_base(args.api_base)
+    payload = _api_request(api_base, "GET", "/settings/concurrency")
+    if not isinstance(payload, dict):
+        print("error: unexpected response payload", file=sys.stderr)
+        return 1
+
+    limit = payload.get("project_limit")
+    effective_limit = payload.get("effective_project_limit")
+    worker_pool = payload.get("worker_pool_size")
+    parallel_enabled = payload.get("parallel_enabled")
+    updated_at = payload.get("updated_at") or "--"
+    updated_by = payload.get("updated_by") or "--"
+
+    print(f"Configured project concurrency limit: {limit}")
+    if effective_limit is not None and effective_limit != limit:
+        print(f"Effective runtime limit: {effective_limit}")
+    print(
+        "Worker pool size: {size} (parallel {state})".format(
+            size=worker_pool,
+            state="enabled" if parallel_enabled else "disabled",
+        )
+    )
+    print(f"Last updated: {updated_at} by {updated_by}")
+    return 0
+
+
+def settings_set_concurrency(args: argparse.Namespace) -> int:
+    api_base = _resolve_api_base(args.api_base)
+    try:
+        limit = int(args.project_limit)
+    except ValueError:
+        print("error: --project-limit must be a positive integer", file=sys.stderr)
+        return 1
+    if limit < 1:
+        print("error: --project-limit must be at least 1", file=sys.stderr)
+        return 1
+
+    if _dry_run_enabled(args.dry_run):
+        print(f"[dry-run] Would set global project concurrency limit to {limit}")
+        return 0
+
+    payload: Dict[str, Any] = {"project_limit": limit}
+    if args.actor and args.actor.strip():
+        payload["actor"] = args.actor.strip()
+
+    response = _api_request(api_base, "PATCH", "/settings/concurrency", payload)
+    if not isinstance(response, dict):
+        print("error: unexpected response payload", file=sys.stderr)
+        return 1
+
+    limit_applied = response.get("project_limit")
+    effective = response.get("effective_project_limit")
+    print(f"Updated project concurrency limit to {limit_applied}")
+    if effective is not None and effective != limit_applied:
+        print(f"Runtime worker limit currently {effective}")
+    return 0
+
+
 def projects_bootstrap(args: argparse.Namespace) -> int:
     api_base = _resolve_api_base(args.api_base)
     actor = args.actor.strip() if args.actor and args.actor.strip() else None
@@ -581,6 +699,46 @@ def main(argv: list[str] | None = None) -> int:
     )
     bootstrap_parser.add_argument("--json", action="store_true", help="Emit JSON payload only")
     bootstrap_parser.set_defaults(func=projects_bootstrap)
+
+    tasks_parser = subparsers.add_parser("tasks", help="Inspect task and worker state")
+    tasks_subparsers = tasks_parser.add_subparsers(dest="tasks_command", required=True)
+
+    tasks_status_parser = tasks_subparsers.add_parser(
+        "status",
+        help="Show task totals and concurrency information",
+    )
+    tasks_status_parser.add_argument("--project-id", type=int, help="Filter by project ID")
+    tasks_status_parser.add_argument("--api-base", default=default_api, help="Override API base URL")
+    tasks_status_parser.add_argument("--json", action="store_true", help="Emit raw JSON output")
+    tasks_status_parser.set_defaults(func=tasks_status)
+
+    settings_parser = subparsers.add_parser("settings", help="Manage global runner settings")
+    settings_subparsers = settings_parser.add_subparsers(dest="settings_command", required=True)
+
+    show_concurrency_parser = settings_subparsers.add_parser(
+        "concurrency",
+        help="Display the global project concurrency limit",
+    )
+    show_concurrency_parser.add_argument("--api-base", default=default_api, help="Override API base URL")
+    show_concurrency_parser.set_defaults(func=settings_show_concurrency)
+
+    update_concurrency_parser = settings_subparsers.add_parser(
+        "set-concurrency",
+        help="Update the global project concurrency limit",
+    )
+    update_concurrency_parser.add_argument(
+        "--project-limit",
+        required=True,
+        help="Maximum concurrent tasks per project (positive integer)",
+    )
+    update_concurrency_parser.add_argument("--actor", help="Operator recorded in audit logs")
+    update_concurrency_parser.add_argument("--api-base", default=default_api, help="Override API base URL")
+    update_concurrency_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Skip network calls and print intent",
+    )
+    update_concurrency_parser.set_defaults(func=settings_set_concurrency)
 
     args = parser.parse_args(argv)
     return args.func(args)

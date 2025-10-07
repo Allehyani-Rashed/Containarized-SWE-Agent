@@ -65,6 +65,18 @@ def ensure_proxy_stack(log_fn: LogFn = None, timeout: float = DEFAULT_PRECHECK_T
             pass
 
 
+def preflight_proxy_stack(*, docker_disabled: bool, log_fn: LogFn = None) -> bool:
+    """Run the proxy preflight gate, respecting docker-disabled scenarios."""
+
+    if docker_disabled:
+        if log_fn:
+            log_fn("Skipping proxy preflight (Docker disabled)")
+        return True
+    if log_fn:
+        log_fn("Verifying proxy stack readiness")
+    return ensure_proxy_stack(log_fn=log_fn)
+
+
 def _ensure_network_present(
     client: docker.DockerClient,
     network_name: str,

@@ -24,6 +24,11 @@ def _initialize_git_repo(path: Path) -> None:
 
 class Phase6AllowlistTests(unittest.TestCase):
     def setUp(self) -> None:
+        metrics_module = sys.modules.get("app.app.metrics")
+        if metrics_module is not None:
+            reset = getattr(metrics_module, "reset_metrics_registry", None)
+            if callable(reset):
+                reset()
         self.tmp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp_dir.cleanup)
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'phase6.db'}"

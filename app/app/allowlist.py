@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional
+from threading import RLock
+from typing import Callable, Dict, Iterable, List, Optional
 from urllib.parse import urlsplit
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -33,6 +34,11 @@ DEFAULT_NO_PROXY = "localhost,127.0.0.1,.local"
 
 
 LogFn = Optional[Callable[[str], None]]
+
+
+_FILTER_LOCK = RLock()
+_ACTIVE_ALLOWLISTS: Dict[int, List[str]] = {}
+_CURRENT_FILTER_ENTRIES: List[str] = []
 
 
 def normalize_host(raw: str) -> Optional[str]:
@@ -74,6 +80,31 @@ def _deduplicate(items: Iterable[str]) -> List[str]:
             seen.add(entry)
             result.append(entry)
     return result
+
+
+def _merge_active_allowlists_locked() -> List[str]:
+    """Return the deduplicated union of the base allowlist and active task entries."""
+
+    combined: list[str] = []
+    combined.extend(load_base_allowlist())
+    for entries in _ACTIVE_ALLOWLISTS.values():
+        combined.extend(entries)
+    return _deduplicate(combined)
+
+
+def _update_filter_locked(entries: Iterable[str], log_fn: LogFn = None) -> Path:
+    """Write Tinyproxy's filter only when the contents change."""
+
+    global _CURRENT_FILTER_ENTRIES
+    normalized = _deduplicate(entries)
+    if normalized == _CURRENT_FILTER_ENTRIES:
+        return GENERATED_FILTER_PATH
+    path = write_filter_file(normalized)
+    _CURRENT_FILTER_ENTRIES = normalized
+    if log_fn:
+        log_fn(f"Proxy filter updated at {path}")
+    _reload_proxy(log_fn=log_fn)
+    return path
 
 
 def load_base_allowlist(project_host: Optional[str] = None) -> List[str]:
@@ -173,11 +204,35 @@ def _reload_proxy(log_fn: LogFn = None) -> bool:
 def refresh_proxy_allowlist(entries: Iterable[str], log_fn: LogFn = None) -> Path:
     """Write the filter file and attempt to reload the Tinyproxy container."""
 
-    path = write_filter_file(entries)
-    if log_fn:
-        log_fn(f"Proxy filter updated at {path}")
-    _reload_proxy(log_fn=log_fn)
-    return path
+    with _FILTER_LOCK:
+        return _update_filter_locked(entries, log_fn=log_fn)
+
+
+def apply_project_allowlist(
+    task_id: int,
+    project_host: Optional[str],
+    extras: Iterable[str],
+    *,
+    log_fn: LogFn = None,
+) -> List[str]:
+    """Register a task's allowlist and refresh Tinyproxy with the aggregated union."""
+
+    merged = merge_allowlists(project_host, extras)
+    with _FILTER_LOCK:
+        _ACTIVE_ALLOWLISTS[task_id] = merged
+        combined = _merge_active_allowlists_locked()
+        _update_filter_locked(combined, log_fn=log_fn)
+    return merged
+
+
+def clear_task_allowlist(task_id: int, *, log_fn: LogFn = None) -> List[str]:
+    """Remove a task's allowlist contribution and refresh Tinyproxy."""
+
+    with _FILTER_LOCK:
+        _ACTIVE_ALLOWLISTS.pop(task_id, None)
+        combined = _merge_active_allowlists_locked()
+        _update_filter_locked(combined, log_fn=log_fn)
+        return combined
 
 
 def normalize_user_allowlist(entries: Iterable[str]) -> List[str]:

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from app.app.project_cache import sentinel as project_cache_sentinel
 from app.app.sanitizer import (
     LEGACY_SANITIZER_FILENAME,
     PRIMARY_SANITIZER_FILENAME,
@@ -26,6 +27,13 @@ class SanitizerFilenameTests(unittest.TestCase):
     def _sanitize(self, task_id: int) -> Path:
         self.created_workspaces.append(task_id)
         return sanitize_workspace(self.project_root, task_id)
+
+    def test_sanitize_excludes_breakout_sentinel(self) -> None:
+        sentinel = self.project_root.parent / project_cache_sentinel.SENTINEL_FILENAME
+        sentinel.write_text("sentinel-token", encoding="utf-8")
+
+        workspace = self._sanitize(task_id=9041)
+        self.assertFalse((workspace / project_cache_sentinel.SENTINEL_FILENAME).exists())
 
     def test_prefers_projectsanitize_when_both_exist(self) -> None:
         (self.project_root / "keepme.txt").write_text("data\n", encoding="utf-8")

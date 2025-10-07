@@ -10,19 +10,24 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlmodel import SQLModel, Session
 
 from app.app.project_cache import project_cache_repo_path
 
 
 class CodexCredentialTests(unittest.TestCase):
     def setUp(self) -> None:
+        metrics_module = sys.modules.get("app.app.metrics")
+        if metrics_module is not None:
+            reset = getattr(metrics_module, "reset_metrics_registry", None)
+            if callable(reset):
+                reset()
         self.tmp_dir = tempfile.TemporaryDirectory()
         os.environ["APP_DATABASE_URL"] = f"sqlite:///{Path(self.tmp_dir.name) / 'creds.db'}"
         os.environ["PROJECT_CACHE_ROOT"] = str(Path(self.tmp_dir.name) / "cache")
         for module in list(sys.modules.keys()):
             if module.startswith("app.app"):
                 sys.modules.pop(module)
-        from sqlmodel import SQLModel
 
         SQLModel.metadata.clear()
         from app.app import main as main_module
@@ -215,6 +220,21 @@ class CodexCredentialTests(unittest.TestCase):
             assert detail_payload is not None
             self.assertEqual(detail_payload["status"], "done", entries)
             self.assertTrue(any("ChatGPT session bundle" in entry for entry in entries))
+
+    def test_dry_run_mode_still_reads_persisted_gitlab_pat(self) -> None:
+        os.environ["RUNNER_GIT_DRY_RUN"] = "1"
+        self.addCleanup(lambda: os.environ.pop("RUNNER_GIT_DRY_RUN", None))
+
+        from app.app.integrations import get_gitlab_pat_token
+
+        with TestClient(self.main.app) as client:
+            rotate_resp = client.post("/integrations/pat", json={"token": "gitlab-token", "updated_by": "tester"})
+            self.assertEqual(rotate_resp.status_code, 200)
+
+            with Session(self.main.engine) as session:
+                token = get_gitlab_pat_token(session)
+
+        self.assertEqual(token, "gitlab-token")
 
 
 if __name__ == "__main__":

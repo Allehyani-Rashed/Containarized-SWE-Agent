@@ -30,11 +30,18 @@ if str(REPO_ROOT) not in sys.path:
 
 from fastapi.testclient import TestClient
 
-from app.app.project_cache import ensure_cache_root, project_cache_repo_path
+from app.app.project_cache import ProjectCacheError, ProjectCacheService
+
+CACHE_SERVICE = ProjectCacheService()
 
 
 def _reset_app_modules() -> None:
     """Discard cached `app.app.*` modules so Fresh imports re-init the app."""
+    metrics_module = sys.modules.get("app.app.metrics")
+    if metrics_module is not None:
+        reset = getattr(metrics_module, "reset_metrics_registry", None)
+        if callable(reset):
+            reset()
     for name in list(sys.modules.keys()):
         if name.startswith("app.app"):
             sys.modules.pop(name)
@@ -78,8 +85,7 @@ def _seed_project_cache(
 ) -> Path:
     """Ensure the canonical cache directory contains a git repository for the project."""
 
-    ensure_cache_root()
-    cache_repo = project_cache_repo_path(gitlab_host, gitlab_project_path).resolve()
+    cache_repo = CACHE_SERVICE.repo_path_for(gitlab_host, gitlab_project_path).resolve()
     project_root = project_root.resolve()
 
     if cache_repo == project_root:
@@ -156,6 +162,11 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--codex-token",
+        dest="codex_token",
+        help="Codex access token to export as CODEX_ACCESS_TOKEN before submitting the task",
+    )
+    parser.add_argument(
         "--disable-docker",
         action="store_true",
         help="Force the helper to run with RUNNER_DISABLE_DOCKER=1 (stub mode)",
@@ -189,6 +200,13 @@ def _parse_args() -> argparse.Namespace:
         "--target-branch",
         dest="target_branch",
         help="Target (base) branch for the task; defaults to the project's configured default branch",
+    )
+    parser.add_argument(
+        "--change-mode",
+        dest="change_mode",
+        choices=["merge_request", "branch_commit"],
+        default="merge_request",
+        help="Choose whether to create a merge request (default) or commit to the existing branch",
     )
     parser.add_argument(
         "--codex-model",
@@ -264,6 +282,7 @@ def _submit_task(
     target_branch: Optional[str] = None,
     codex_model: Optional[str] = None,
     codex_reasoning_effort: Optional[str] = None,
+    change_mode: Optional[str] = None,
 ) -> int:
     payload = {
         "project_id": project_id,
@@ -277,6 +296,8 @@ def _submit_task(
         payload["codex_model"] = codex_model
     if codex_reasoning_effort:
         payload["codex_reasoning_effort"] = codex_reasoning_effort
+    if change_mode:
+        payload["change_mode"] = change_mode
 
     response = client.post("/tasks", json=payload)
     response.raise_for_status()
@@ -303,15 +324,36 @@ def _print_logs(client: TestClient, task_id: int) -> list[str]:
     snapshot_status = payload.get("status")
     snapshot_branch = payload.get("branch") or "--"
     snapshot_target = payload.get("target_branch") or "--"
+    snapshot_mode = payload.get("change_mode") or "--"
+    snapshot_commit = payload.get("commit_sha") or "--"
+    snapshot_commit_url = payload.get("commit_url") or ""
     snapshot_model = payload.get("codex_model") or "default"
     snapshot_reasoning = payload.get("codex_reasoning_effort") or "medium"
     snapshot_abort = payload.get("abort_requested", False)
+    credentials = payload.get("credentials") or {}
+    pat_available = "yes" if credentials.get("gitlab_pat_available") else "no"
+    pat_updated = credentials.get("gitlab_pat_last_updated") or "--"
+    chat_available = "yes" if credentials.get("chatgpt_session_available") else "no"
+    chat_updated = credentials.get("chatgpt_session_last_updated") or "--"
     print(LOG_DIVIDER)
     print("Task log snapshot:")
     print(
-        f"- Status at capture: {snapshot_status or '--'} | Branch: {snapshot_branch} | Base: {snapshot_target} | "
-        f"Model: {snapshot_model} | Reasoning: {snapshot_reasoning} | "
+        f"- Status at capture: {snapshot_status or '--'} | Mode: {snapshot_mode} | Branch: {snapshot_branch} | "
+        f"Base: {snapshot_target} | Model: {snapshot_model} | Reasoning: {snapshot_reasoning} | "
         f"Abort requested: {'yes' if snapshot_abort else 'no'}"
+    )
+    if snapshot_mode == 'branch_commit' and snapshot_commit != '--':
+        if snapshot_commit_url:
+            print(f"- Commit: {snapshot_commit} ({snapshot_commit_url})")
+        else:
+            print(f"- Commit: {snapshot_commit}")
+    print(
+        "- Credentials: PAT {pat} (updated {pat_time}) | ChatGPT session {chat} (updated {chat_time})".format(
+            pat=pat_available,
+            pat_time=pat_updated,
+            chat=chat_available,
+            chat_time=chat_updated,
+        )
     )
     for entry in entries:
         print(entry)
@@ -370,6 +412,9 @@ def main() -> None:
         print("Docker disabled via --disable-docker; stub runner will be used.")
     else:
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
+
+    if args.codex_token:
+        os.environ["CODEX_ACCESS_TOKEN"] = args.codex_token
 
     try:
         scratch_dir_obj = tempfile.TemporaryDirectory()
@@ -473,23 +518,21 @@ def main() -> None:
 
             if args.exercise_cache:
                 # Probe cache bootstrap/refresh paths and an intentional failure
-                from app.app.project_cache import project_cache_repo_path
-
-                repo_path = project_cache_repo_path(args.gitlab_host, args.gitlab_project_path)
+                repo_path = CACHE_SERVICE.repo_path_for(args.gitlab_host or "", args.gitlab_project_path or "")
                 print(f"Cache path for project: {repo_path}")
                 # Force a dry-run bootstrap message by ensuring directory exists without .git
                 repo_path.parent.mkdir(parents=True, exist_ok=True)
                 if not repo_path.exists():
                     repo_path.mkdir(parents=True)
                 # Invoke refresh in dry-run to capture skip messages
-                from app.app.project_cache import refresh_project_cache, ProjectCacheError
                 try:
-                    refreshed = refresh_project_cache(
-                        repo_path,
-                        "main",
+                    refreshed = CACHE_SERVICE.refresh(
+                        gitlab_host=args.gitlab_host or "",
+                        project_path=args.gitlab_project_path or "",
+                        default_branch="main",
                         dry_run=True,
                         log_fn=lambda m: print(f"[cache] {m}"),
-                        project_identifier=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
+                        identifier_override=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
                     )
                     print(f"Dry-run refresh result: {refreshed}")
                 except ProjectCacheError as exc:
@@ -500,12 +543,13 @@ def main() -> None:
                     corrupt_flag.mkdir(parents=True, exist_ok=True)
                 (corrupt_flag / "BROKEN").write_text("1", encoding="utf-8")
                 try:
-                    refresh_project_cache(
-                        repo_path,
-                        "main",
+                    CACHE_SERVICE.refresh(
+                        gitlab_host=args.gitlab_host or "",
+                        project_path=args.gitlab_project_path or "",
+                        default_branch="main",
                         dry_run=False,
                         log_fn=lambda m: print(f"[cache] {m}"),
-                        project_identifier=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
+                        identifier_override=f"{args.gitlab_host.rstrip('/')}/{args.gitlab_project_path}",
                     )
                 except ProjectCacheError as exc:
                     print(f"Intentional cache refresh failure captured: {exc}")
@@ -524,11 +568,13 @@ def main() -> None:
                     target_branch=args.target_branch,
                     codex_model=args.codex_model,
                     codex_reasoning_effort=args.codex_reasoning_effort,
+                    change_mode=args.change_mode,
                 )
                 print(
-                    "Submitted task {task_id} (project_id={pid}, branch={branch}, base={base}, model={model}, reasoning={reasoning})".format(
+                    "Submitted task {task_id} (project_id={pid}, mode={mode}, branch={branch}, base={base}, model={model}, reasoning={reasoning})".format(
                         task_id=task_id,
                         pid=project_id,
+                        mode=args.change_mode,
                         branch=args.branch_name or "<generated>",
                         base=args.target_branch or "<default>",
                         model=args.codex_model or "<default>",

@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Thread
-from typing import Callable, Iterable, Optional
+from typing import Callable, Dict, Iterable, Optional
 
 import base64
 
@@ -43,6 +43,8 @@ class CodexResult:
     used_docker: bool
     branch: Optional[str] = None
     mr_url: Optional[str] = None
+    commit_sha: Optional[str] = None
+    commit_url: Optional[str] = None
     agent_version: Optional[str] = None
     invocation_flags: list[str] = field(default_factory=list)
     codex_model: Optional[str] = None
@@ -57,154 +59,167 @@ class CodexRunnerAborted(CodexRunnerError):
     """Raised when codex execution is terminated due to an abort request."""
 
 
-def run_codex(
-    workspace: Path,
-    *,
-    prompt: str,
-    allowlist: Optional[Iterable[str]] = None,
-    gitlab_host: str,
-    gitlab_project_path: str,
-    gitlab_token: str,
-    chatgpt_session_bundle: Optional[str],
-    target_branch: str,
-    branch_name: str,
-    mr_title: str,
-    task_id: int,
-    codex_model: Optional[str] = None,
-    codex_reasoning_effort: Optional[str] = None,
-    log_fn: Optional[Callable[[str], None]] = None,
-    abort_event: Optional[Event] = None,
-) -> CodexResult:
-    """Execute the placeholder codex workflow, preferring Docker when available."""
-    allowlist = list(allowlist or [])
-    workspace = workspace.resolve()
+class CodexExecutionService:
+    """Facade encapsulating Docker and local Codex execution flows."""
 
-    if not gitlab_token:
-        raise CodexRunnerError("GitLab token is required for finish_task operations")
+    def __init__(
+        self,
+        *,
+        docker_runner: Callable[..., int] | None = None,
+        stub_runner: Callable[..., int] | None = None,
+        metadata_loader: Callable[[Path, Optional[Callable[[str], None]]], tuple[Optional[str], list[str]]] | None = None,
+        finish_loader: Callable[[Path, Optional[Callable[[str], None]]], Dict[str, str]] | None = None,
+        proxy_env_provider: Callable[[], Dict[str, str]] | None = None,
+    ) -> None:
+        self._docker_runner = docker_runner or _run_in_docker
+        self._stub_runner = stub_runner or _run_local_stub
+        self._metadata_loader = metadata_loader or _load_metadata
+        self._finish_loader = finish_loader or _load_finish_metadata
+        self._proxy_env_provider = proxy_env_provider or proxy_environment
 
-    metadata_path = workspace / CODEX_METADATA_FILENAME
-    result_path = workspace / "CODEX_RESULT.json"
-    for stale_path in (result_path, metadata_path):
-        if stale_path.exists():
-            try:
-                stale_path.unlink()
-            except OSError:
-                # Stale metadata from previous runs is best-effort removed.
-                pass
+    def execute(
+        self,
+        workspace: Path,
+        *,
+        prompt: str,
+        allowlist: Optional[Iterable[str]] = None,
+        gitlab_host: str,
+        gitlab_project_path: str,
+        gitlab_token: str,
+        chatgpt_session_bundle: Optional[str],
+        target_branch: str,
+        branch_name: str,
+        mr_title: str,
+        change_mode: str,
+        task_id: int,
+        codex_model: Optional[str] = None,
+        codex_reasoning_effort: Optional[str] = None,
+        log_fn: Optional[Callable[[str], None]] = None,
+        extra_env: Optional[Dict[str, str]] = None,
+        abort_event: Optional[Event] = None,
+    ) -> CodexResult:
+        allowlist = list(allowlist or [])
+        workspace = workspace.resolve()
 
-    reasoning_effort = codex_reasoning_effort or default_reasoning_effort()
+        if not gitlab_token:
+            raise CodexRunnerError("GitLab token is required for finish_task operations")
 
-    runner_env = {
-        "GITLAB_TOKEN": gitlab_token,
-        "GITLAB_HOST": gitlab_host,
-        "GITLAB_PROJECT_PATH": gitlab_project_path,
-        "TARGET_BRANCH": target_branch,
-        "BRANCH": branch_name,
-        "MR_TITLE": mr_title,
-        "TASK_ID": str(task_id),
-        "PROMPT": prompt,
-        "RUNNER_RESULT_FILE": "CODEX_RESULT.json",
-        "CODEX_METADATA_FILE": CODEX_METADATA_FILENAME,
-        "CODEX_INVOCATION_FLAGS": "--yolo --skip-git-repo-check",
-    }
+        metadata_path = workspace / CODEX_METADATA_FILENAME
+        result_path = workspace / "CODEX_RESULT.json"
+        for stale_path in (result_path, metadata_path):
+            if stale_path.exists():
+                try:
+                    stale_path.unlink()
+                except OSError:
+                    pass
 
-    dry_run_flag = os.environ.get("RUNNER_GIT_DRY_RUN")
-    if dry_run_flag is not None:
-        runner_env["RUNNER_GIT_DRY_RUN"] = dry_run_flag
+        reasoning_effort = codex_reasoning_effort or default_reasoning_effort()
 
-    if chatgpt_session_bundle:
-        encoded_bundle = base64.b64encode(chatgpt_session_bundle.encode("utf-8")).decode("ascii")
-        runner_env["CODEX_SESSION_BUNDLE_B64"] = encoded_bundle
-        if "CODEX_CREDENTIAL_MODE" not in runner_env:
-            runner_env["CODEX_CREDENTIAL_MODE"] = "session"
+        runner_env = {
+            "GITLAB_TOKEN": gitlab_token,
+            "GITLAB_HOST": gitlab_host,
+            "GITLAB_PROJECT_PATH": gitlab_project_path,
+            "TARGET_BRANCH": target_branch,
+            "BRANCH": branch_name,
+            "MR_TITLE": mr_title,
+            "CHANGE_MODE": change_mode,
+            "TASK_ID": str(task_id),
+            "PROMPT": prompt,
+            "RUNNER_RESULT_FILE": "CODEX_RESULT.json",
+            "CODEX_METADATA_FILE": CODEX_METADATA_FILENAME,
+            "CODEX_INVOCATION_FLAGS": "--yolo --skip-git-repo-check",
+        }
 
-    runner_env.update(proxy_environment())
+        if extra_env:
+            runner_env.update({key: str(value) for key, value in extra_env.items()})
 
-    if codex_model:
-        runner_env["CODEX_MODEL_ID"] = codex_model
+        dry_run_flag = os.environ.get("RUNNER_GIT_DRY_RUN")
+        if dry_run_flag is not None:
+            runner_env["RUNNER_GIT_DRY_RUN"] = dry_run_flag
 
-    if reasoning_effort:
-        runner_env["CODEX_MODEL_REASONING_EFFORT"] = reasoning_effort
+        if chatgpt_session_bundle:
+            encoded_bundle = base64.b64encode(chatgpt_session_bundle.encode("utf-8")).decode("ascii")
+            runner_env["CODEX_SESSION_BUNDLE_B64"] = encoded_bundle
+            runner_env.setdefault("CODEX_CREDENTIAL_MODE", "session")
 
-    allow_stub_fallback = os.environ.get("RUNNER_ALLOW_STUB_FALLBACK", "1") not in {"0", "false", "False"}
+        runner_env.update(self._proxy_env_provider())
 
-    if os.environ.get("RUNNER_DISABLE_DOCKER", "0") == "1":
-        if log_fn:
-            log_fn("Docker execution disabled via RUNNER_DISABLE_DOCKER=1; using local stub runner")
-        exit_code = _run_local_stub(
-            workspace,
-            prompt,
-            allowlist,
-            runner_env,
-            log_fn,
-            abort_event=abort_event,
-        )
-        if exit_code == 0:
-            result_branch, mr_url, result_model, result_effort = _load_finish_metadata(result_path, log_fn)
+        if codex_model:
+            runner_env["CODEX_MODEL_ID"] = codex_model
+
+        if reasoning_effort:
+            runner_env["CODEX_MODEL_REASONING_EFFORT"] = reasoning_effort
+
+        allow_stub_fallback = os.environ.get("RUNNER_ALLOW_STUB_FALLBACK", "1") not in {"0", "false", "False"}
+        docker_disabled = os.environ.get("RUNNER_DISABLE_DOCKER", "0") == "1"
+
+        if docker_disabled:
+            if log_fn:
+                log_fn("Docker execution disabled via RUNNER_DISABLE_DOCKER=1; using local stub runner")
+            exit_code = self._stub_runner(
+                workspace,
+                prompt,
+                allowlist,
+                runner_env,
+                log_fn,
+                abort_event=abort_event,
+            )
+            used_docker = False
         else:
-            result_branch, mr_url, result_model, result_effort = None, None, None, None
-        agent_version, flags = _load_metadata(metadata_path, log_fn)
+            try:
+                exit_code = self._docker_runner(
+                    workspace,
+                    prompt,
+                    allowlist,
+                    runner_env,
+                    log_fn,
+                    abort_event=abort_event,
+                )
+            except CodexRunnerAborted:
+                raise
+            except (DockerException, CodexRunnerError) as exc:
+                if not allow_stub_fallback:
+                    if log_fn:
+                        log_fn(
+                            "Docker execution failed and stub fallback is disabled; "
+                            "set RUNNER_ALLOW_STUB_FALLBACK=1 to permit stubs",
+                        )
+                        log_fn(f"Underlying error: {exc}")
+                    raise CodexRunnerError(
+                        "Docker runner failed and stub fallback is disallowed",
+                    ) from exc
+                if log_fn:
+                    log_fn(f"Docker unavailable or failed ({exc}); using local stub")
+                exit_code = self._stub_runner(
+                    workspace,
+                    prompt,
+                    allowlist,
+                    runner_env,
+                    log_fn,
+                    abort_event=abort_event,
+                )
+                used_docker = False
+            else:
+                used_docker = True
+
+        if exit_code == 0:
+            metadata = self._finish_loader(result_path, log_fn)
+        else:
+            metadata = {}
+        agent_version, flags = self._metadata_loader(metadata_path, log_fn)
+
         return CodexResult(
             exit_code=exit_code,
-            used_docker=False,
-            branch=result_branch,
-            mr_url=mr_url,
+            used_docker=used_docker,
+            branch=metadata.get("branch"),
+            mr_url=metadata.get("mr_url"),
+            commit_sha=metadata.get("commit_sha"),
+            commit_url=metadata.get("commit_url"),
             agent_version=agent_version,
             invocation_flags=flags,
-            codex_model=result_model or codex_model,
-            codex_reasoning_effort=result_effort or reasoning_effort,
+            codex_model=metadata.get("codex_model") or codex_model,
+            codex_reasoning_effort=metadata.get("codex_reasoning_effort") or reasoning_effort,
         )
-
-    try:
-        exit_code = _run_in_docker(
-            workspace,
-            prompt,
-            allowlist,
-            runner_env,
-            log_fn,
-            abort_event=abort_event,
-        )
-    except CodexRunnerAborted:
-        raise
-    except (DockerException, CodexRunnerError) as exc:
-        if not allow_stub_fallback:
-            if log_fn:
-                log_fn(
-                    "Docker execution failed and stub fallback is disabled; "
-                    "set RUNNER_ALLOW_STUB_FALLBACK=1 to permit stubs",
-                )
-                log_fn(f"Underlying error: {exc}")
-            raise CodexRunnerError(
-                "Docker runner failed and stub fallback is disallowed",
-            ) from exc
-        if log_fn:
-            log_fn(f"Docker unavailable or failed ({exc}); using local stub")
-        exit_code = _run_local_stub(
-            workspace,
-            prompt,
-            allowlist,
-            runner_env,
-            log_fn,
-            abort_event=abort_event,
-        )
-        used_docker = False
-    else:
-        used_docker = True
-    if exit_code == 0:
-        result_branch, mr_url, result_model, result_effort = _load_finish_metadata(result_path, log_fn)
-    else:
-        result_branch, mr_url, result_model, result_effort = None, None, None, None
-    agent_version, flags = _load_metadata(metadata_path, log_fn)
-    return CodexResult(
-        exit_code=exit_code,
-        used_docker=used_docker,
-        branch=result_branch,
-        mr_url=mr_url,
-        agent_version=agent_version,
-        invocation_flags=flags,
-        codex_model=result_model or codex_model,
-        codex_reasoning_effort=result_effort or reasoning_effort,
-    )
 
 
 def _run_in_docker(
@@ -232,8 +247,13 @@ def _run_in_docker(
 
     command = ["/usr/local/bin/launch_codex.sh"]
 
-    mem_limit = os.environ.get("RUNNER_MEM_LIMIT", DEFAULT_MEM_LIMIT)
-    pids_limit_env = os.environ.get("RUNNER_PIDS_LIMIT")
+    mem_limit = os.environ.get("WORKER_TASK_MEMORY_LIMIT") or os.environ.get(
+        "RUNNER_MEM_LIMIT",
+        DEFAULT_MEM_LIMIT,
+    )
+    pids_limit_env = os.environ.get("WORKER_TASK_PID_LIMIT") or os.environ.get(
+        "RUNNER_PIDS_LIMIT",
+    )
     if pids_limit_env is None:
         pids_limit = DEFAULT_PIDS_LIMIT
     else:
@@ -422,11 +442,11 @@ def _run_finish_task_local(
 def _load_finish_metadata(
     result_path: Path,
     log_fn: Optional[Callable[[str], None]],
-) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+) -> Dict[str, Optional[str]]:
     if not result_path.exists():
         if log_fn:
             log_fn(f"finish_task metadata not found at {result_path}")
-        return None, None, None, None
+        return {}
 
     try:
         content = result_path.read_text(encoding="utf-8")
@@ -434,13 +454,23 @@ def _load_finish_metadata(
     except (OSError, json.JSONDecodeError) as exc:
         if log_fn:
             log_fn(f"Unable to parse finish_task metadata: {exc}")
-        return None, None, None, None
+        return {}
 
-    branch = data.get("branch")
-    mr_url = data.get("mr_url")
-    codex_model = data.get("codex_model") or None
-    reasoning_effort = data.get("codex_reasoning_effort") or None
-    return branch, mr_url, codex_model, reasoning_effort
+    payload: Dict[str, Optional[str]] = {}
+    for key in (
+        "branch",
+        "mr_url",
+        "commit_sha",
+        "commit_url",
+        "codex_model",
+        "codex_reasoning_effort",
+    ):
+        value = data.get(key)
+        if isinstance(value, str):
+            payload[key] = value or None
+        else:
+            payload[key] = None
+    return payload
 
 
 def _load_metadata(metadata_path: Path, log_fn: Optional[Callable[[str], None]]) -> tuple[Optional[str], list[str]]:
@@ -563,3 +593,15 @@ def _run_local_stub(
 
     finish_code = _run_finish_task_local(workspace, env, log_fn, abort_event=abort_event)
     return finish_code
+
+
+_DEFAULT_EXECUTION_SERVICE = CodexExecutionService()
+
+
+def run_codex(
+    workspace: Path,
+    **kwargs,
+) -> CodexResult:
+    """Backwards-compatible helper invoking the default execution service."""
+
+    return _DEFAULT_EXECUTION_SERVICE.execute(workspace, **kwargs)
