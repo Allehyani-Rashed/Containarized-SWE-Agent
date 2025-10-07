@@ -20,13 +20,10 @@ from app.app.integrations import get_gitlab_pat_token
 from app.app.models import Project
 from app.app.project_cache import (
     ProjectCacheError,
-    bootstrap_project_cache,
-    enforce_cache_policy,
-    project_cache_identifier,
-    project_cache_repo_path,
-    refresh_project_cache,
-    snapshot_project_cache,
+    ProjectCacheService,
 )
+
+CACHE_SERVICE = ProjectCacheService()
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -104,8 +101,8 @@ def _bootstrap_single_project(
         )
         return False
 
-    cache_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
-    cache_identifier = project_cache_identifier(project.gitlab_host, project.gitlab_project_path)
+    cache_path = CACHE_SERVICE.repo_path_for(project.gitlab_host or "", project.gitlab_project_path or "")
+    cache_identifier = CACHE_SERVICE.identifier_for(project.gitlab_host or "", project.gitlab_project_path or "")
 
     def _log(message: str) -> None:
         print(f"[project {label}] {message}")
@@ -113,10 +110,9 @@ def _bootstrap_single_project(
     _log("Starting bootstrap")
 
     try:
-        bootstrap_project_cache(
-            cache_path,
+        CACHE_SERVICE.bootstrap(
             gitlab_host=project.gitlab_host or "",
-            gitlab_project_path=project.gitlab_project_path or "",
+            project_path=project.gitlab_project_path or "",
             default_branch=project.default_branch or "",
             gitlab_token=token,
             dry_run=dry_run,
@@ -146,8 +142,8 @@ def _refresh_single_project(
         )
         return False
 
-    cache_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
-    cache_identifier = project_cache_identifier(project.gitlab_host, project.gitlab_project_path)
+    cache_path = CACHE_SERVICE.repo_path_for(project.gitlab_host or "", project.gitlab_project_path or "")
+    cache_identifier = CACHE_SERVICE.identifier_for(project.gitlab_host or "", project.gitlab_project_path or "")
 
     def _log(message: str) -> None:
         print(f"[project {label}] {message}")
@@ -155,31 +151,34 @@ def _refresh_single_project(
     _log("Starting refresh")
 
     try:
-        commit_hash = refresh_project_cache(
-            cache_path,
-            project.default_branch,
+        commit_hash = CACHE_SERVICE.refresh(
+            gitlab_host=project.gitlab_host or "",
+            project_path=project.gitlab_project_path or "",
+            default_branch=project.default_branch or "",
             gitlab_token=token,
             dry_run=dry_run,
             force=force,
             log_fn=_log,
-            project_identifier=cache_identifier,
+            identifier_override=cache_identifier,
         )
-        enforce_cache_policy(
-            cache_path,
+        CACHE_SERVICE.enforce_policy(
+            gitlab_host=project.gitlab_host or "",
+            project_path=project.gitlab_project_path or "",
             quota_mb=project.cache_quota_mb,
             prune_after_hours=project.cache_prune_after_hours,
             dry_run=dry_run,
             log_fn=_log,
         )
-        snapshot_path = snapshot_project_cache(
-            cache_path,
+        snapshot_outcome = CACHE_SERVICE.snapshot(
+            gitlab_host=project.gitlab_host or "",
+            project_path=project.gitlab_project_path or "",
             commit_hash=commit_hash,
             branch=project.default_branch or "",
             dry_run=dry_run,
             log_fn=_log,
         )
-        if snapshot_path is not None and not dry_run:
-            _log(f"Snapshot stored at {snapshot_path}")
+        if snapshot_outcome.created_path is not None and not dry_run:
+            _log(f"Snapshot stored at {snapshot_outcome.created_path}")
     except ProjectCacheError as exc:
         print(f"[project {label}] Refresh failed: {exc}", file=sys.stderr)
         return False

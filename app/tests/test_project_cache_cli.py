@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from app.app.project_cache import ProjectCacheService
+
 
 class ProjectCacheScriptTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -52,10 +54,10 @@ class ProjectCacheScriptTests(unittest.TestCase):
     ):
         from sqlmodel import Session
         from app.app.models import Project
-        from app.app.project_cache import project_cache_repo_path
 
         host = "https://gitlab.example.com"
-        cache_path = project_cache_repo_path(host, slug)
+        service = ProjectCacheService()
+        cache_path = service.repo_path_for(host, slug)
         if ensure_repo_dir:
             cache_path.mkdir(parents=True, exist_ok=True)
         with Session(self.engine) as session:
@@ -109,10 +111,10 @@ class ProjectCacheScriptTests(unittest.TestCase):
 
         from scripts import project_cache as cli
 
-        with mock.patch.object(cli, "refresh_project_cache", return_value="abc123") as mock_refresh, mock.patch.object(
-            cli,
-            "enforce_cache_policy",
-        ) as mock_policy, mock.patch.object(cli, "snapshot_project_cache", return_value=None) as mock_snapshot:
+        with mock.patch.object(cli.CACHE_SERVICE, "refresh", return_value="abc123") as mock_refresh, mock.patch.object(
+            cli.CACHE_SERVICE,
+            "enforce_policy",
+        ) as mock_policy, mock.patch.object(cli.CACHE_SERVICE, "snapshot", return_value=mock.Mock(created_path=None)) as mock_snapshot:
             succeeded = cli._refresh_single_project(project, gitlab_pat=None, dry_run=False, force=False)
 
         self.assertTrue(succeeded)
@@ -120,36 +122,36 @@ class ProjectCacheScriptTests(unittest.TestCase):
         mock_policy.assert_called_once()
         mock_snapshot.assert_called_once()
         args, kwargs = mock_refresh.call_args
-        from app.app.project_cache import project_cache_repo_path
-
-        expected_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
-        self.assertEqual(Path(args[0]).resolve(), expected_path.resolve())
-        self.assertEqual(args[1], "main")
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs["gitlab_host"], project.gitlab_host)
+        self.assertEqual(kwargs["project_path"], project.gitlab_project_path)
+        self.assertEqual(kwargs["default_branch"], project.default_branch)
         self.assertEqual(kwargs["gitlab_token"], "project-specific-token")
-        self.assertIn("project_identifier", kwargs)
+        self.assertFalse(kwargs["dry_run"])
+        self.assertFalse(kwargs["force"])
 
     def test_bootstrap_falls_back_to_project_token(self) -> None:
         project = self._create_project(gitlab_token="project-specific-token", ensure_repo_dir=False)
 
         from scripts import project_cache as cli
 
-        with mock.patch.object(cli, "bootstrap_project_cache") as mock_bootstrap:
+        with mock.patch.object(cli.CACHE_SERVICE, "bootstrap") as mock_bootstrap:
             succeeded = cli._bootstrap_single_project(project, gitlab_pat=None, dry_run=False)
 
         self.assertTrue(succeeded)
         args, kwargs = mock_bootstrap.call_args
-        from app.app.project_cache import project_cache_repo_path
-
-        expected_path = project_cache_repo_path(project.gitlab_host, project.gitlab_project_path)
-        self.assertEqual(Path(args[0]).resolve(), expected_path.resolve())
+        self.assertEqual(args, ())
+        self.assertEqual(kwargs["gitlab_host"], project.gitlab_host)
+        self.assertEqual(kwargs["project_path"], project.gitlab_project_path)
         self.assertEqual(kwargs["gitlab_token"], "project-specific-token")
+        self.assertEqual(kwargs["default_branch"], project.default_branch)
 
     def test_refresh_single_project_requires_credentials(self) -> None:
         project = self._create_project()
 
         from scripts import project_cache as cli
 
-        with mock.patch.object(cli, "refresh_project_cache") as mock_refresh:
+        with mock.patch.object(cli.CACHE_SERVICE, "refresh") as mock_refresh:
             succeeded = cli._refresh_single_project(project, gitlab_pat=None, dry_run=False, force=False)
 
         self.assertFalse(succeeded)
@@ -203,7 +205,7 @@ class ProjectCacheScriptTests(unittest.TestCase):
 
         from scripts import project_cache as cli
 
-        with mock.patch.object(cli, "bootstrap_project_cache"):
+        with mock.patch.object(cli.CACHE_SERVICE, "bootstrap"):
             succeeded = cli._bootstrap_single_project(project, gitlab_pat=None, dry_run=False)
 
         self.assertFalse(succeeded)
@@ -213,7 +215,7 @@ class ProjectCacheScriptTests(unittest.TestCase):
 
         from scripts import project_cache as cli
 
-        with mock.patch.object(cli, "bootstrap_project_cache") as mock_bootstrap:
+        with mock.patch.object(cli.CACHE_SERVICE, "bootstrap") as mock_bootstrap:
             succeeded = cli._bootstrap_single_project(project, gitlab_pat=None, dry_run=True)
 
         self.assertTrue(succeeded)
