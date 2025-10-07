@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
 
-from .models import TaskStatus
+from .models import TaskChangeMode, TaskStatus
 
 
 class ProjectBase(SQLModel):
@@ -36,6 +36,7 @@ class ProjectRead(ProjectBase):
     cache_quota_mb: Optional[int] = None
     cache_prune_after_hours: Optional[int] = None
     last_cache_commit: Optional[str] = None
+    last_active_count: Optional[int] = None
 
 
 class ProjectUpdate(SQLModel):
@@ -49,6 +50,20 @@ class ProjectUpdate(SQLModel):
     allowlist: Optional[List[str]] = None
 
 
+class ConcurrencySettings(SQLModel):
+    project_limit: int
+    effective_project_limit: int
+    worker_pool_size: int
+    parallel_enabled: bool
+    updated_at: Optional[datetime] = None
+    updated_by: Optional[str] = None
+
+
+class ConcurrencySettingsUpdate(SQLModel):
+    project_limit: int
+    actor: Optional[str] = None
+
+
 class ProjectDeleteRequest(SQLModel):
     actor: Optional[str] = None
 
@@ -60,6 +75,9 @@ class ProjectTaskSummary(SQLModel):
     branch: Optional[str]
     target_branch: Optional[str] = None
     mr_title: Optional[str] = None
+    change_mode: TaskChangeMode = TaskChangeMode.merge_request
+    commit_sha: Optional[str] = None
+    commit_url: Optional[str] = None
     codex_model: Optional[str]
     codex_reasoning_effort: Optional[str]
     created_at: datetime
@@ -117,6 +135,7 @@ class TaskCreate(SQLModel):
     codex_model: Optional[str] = None
     codex_reasoning_effort: Optional[str] = None
     mr_title: Optional[str] = None
+    change_mode: Optional[TaskChangeMode] = None
 
 
 class TaskRead(SQLModel):
@@ -131,6 +150,9 @@ class TaskRead(SQLModel):
     target_branch: Optional[str]
     mr_title: Optional[str]
     mr_url: Optional[str]
+    change_mode: TaskChangeMode = TaskChangeMode.merge_request
+    commit_sha: Optional[str] = None
+    commit_url: Optional[str] = None
     workspace_path: Optional[str]
     codex_agent_version: Optional[str]
     codex_invocation: Optional[str]
@@ -138,6 +160,7 @@ class TaskRead(SQLModel):
     codex_reasoning_effort: Optional[str]
     abort_requested: bool
     cache_commit: Optional[str]
+    credentials: "TaskCredentialStatus" = Field(default_factory=lambda: TaskCredentialStatus())
 
 
 class TaskListResponse(SQLModel):
@@ -163,9 +186,13 @@ class TaskLogSnapshot(SQLModel):
     status: TaskStatus
     branch: Optional[str]
     target_branch: Optional[str]
+    change_mode: TaskChangeMode = TaskChangeMode.merge_request
+    commit_sha: Optional[str] = None
+    commit_url: Optional[str] = None
     codex_model: Optional[str]
     codex_reasoning_effort: Optional[str]
     abort_requested: bool
+    credentials: "TaskCredentialStatus" = Field(default_factory=lambda: TaskCredentialStatus())
 
 
 class CodexModelSummary(SQLModel):
@@ -183,3 +210,10 @@ class GitLabBranchSummary(SQLModel):
 class GitLabBranchList(SQLModel):
     items: List[GitLabBranchSummary] = Field(default_factory=list)
     next_page: Optional[int] = None
+
+
+class TaskCredentialStatus(SQLModel):
+    gitlab_pat_available: bool = False
+    gitlab_pat_last_updated: Optional[datetime] = None
+    chatgpt_session_available: bool = False
+    chatgpt_session_last_updated: Optional[datetime] = None

@@ -45,6 +45,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
         os.environ.pop("RUNNER_DISABLE_DOCKER", None)
         os.environ.pop("RUNNER_GIT_DRY_RUN", None)
         os.environ.pop("PROJECT_CACHE_ROOT", None)
+        os.environ.pop("GITLAB_PAT", None)
         self.tmp_dir.cleanup()
 
     def _prepare_project(self, *, configure_pat: bool = True) -> tuple[Path, int]:
@@ -82,7 +83,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
     def test_list_project_branches_fetches_from_gitlab(self) -> None:
         _, project_id = self._prepare_project()
 
-        with TestClient(self.main.app) as client, patch("app.app.main.urlopen") as mock_urlopen:
+        with TestClient(self.main.app) as client, patch("app.app.api.projects.urlopen") as mock_urlopen:
             mock_response = MagicMock()
             mock_response.getcode.return_value = 200
             mock_response.read.return_value = json.dumps(
@@ -120,6 +121,58 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(response.status_code, 409)
             detail = response.json().get("detail", "")
             self.assertIn("PAT", detail)
+
+    def test_project_response_includes_concurrency_fields(self) -> None:
+        _, project_id = self._prepare_project()
+
+        with TestClient(self.main.app) as client:
+            response = client.get("/projects")
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertIsInstance(payload, list)
+            project_summary = next((item for item in payload if item.get("id") == project_id), None)
+            self.assertIsNotNone(project_summary)
+            self.assertNotIn("max_concurrency", project_summary)
+            self.assertIn("last_active_count", project_summary)
+
+    def test_concurrency_settings_endpoint(self) -> None:
+        self._prepare_project()
+
+        with TestClient(self.main.app) as client:
+            show_resp = client.get("/settings/concurrency")
+            self.assertEqual(show_resp.status_code, 200)
+            settings = show_resp.json()
+            self.assertIn("project_limit", settings)
+            self.assertIn("effective_project_limit", settings)
+
+            update_resp = client.patch(
+                "/settings/concurrency",
+                json={"project_limit": 3, "actor": "unittest"},
+            )
+            self.assertEqual(update_resp.status_code, 200)
+            updated = update_resp.json()
+            self.assertEqual(updated.get("project_limit"), 3)
+            self.assertEqual(updated.get("updated_by"), "unittest")
+
+    def test_task_response_includes_credentials(self) -> None:
+        _, project_id = self._prepare_project()
+
+        with TestClient(self.main.app) as client:
+            task_resp = client.post(
+                "/tasks",
+                json={"project_id": project_id, "prompt": "Check credentials"},
+            )
+            self.assertEqual(task_resp.status_code, 201)
+            task_payload = task_resp.json()
+            task_id = task_payload["id"]
+
+            detail_resp = client.get(f"/tasks/{task_id}")
+            self.assertEqual(detail_resp.status_code, 200)
+            detail = detail_resp.json()
+            self.assertIn("credentials", detail)
+            credentials = detail["credentials"]
+            self.assertIn("gitlab_pat_available", credentials)
+            self.assertIn("chatgpt_session_available", credentials)
 
     def test_task_records_branch_and_model(self) -> None:
         _, project_id = self._prepare_project()
@@ -163,6 +216,9 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(final_payload["codex_model"], chosen_model)
             self.assertEqual(final_payload["codex_reasoning_effort"], "high")
             self.assertEqual(final_payload["mr_title"], "Phase 2 Custom Title")
+            self.assertEqual(final_payload["change_mode"], "merge_request")
+            self.assertTrue(final_payload.get("commit_sha"))
+            self.assertTrue(final_payload.get("commit_url"))
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
@@ -171,6 +227,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
             self.assertEqual(snapshot_payload.get("status"), "done")
             self.assertEqual(snapshot_payload.get("branch"), "feature/custom-branch")
             self.assertEqual(snapshot_payload.get("target_branch"), "main")
+            self.assertEqual(snapshot_payload.get("change_mode"), "merge_request")
             self.assertEqual(snapshot_payload.get("codex_model"), chosen_model)
             self.assertEqual(snapshot_payload.get("codex_reasoning_effort"), "high")
             self.assertFalse(snapshot_payload.get("abort_requested", False))
@@ -181,6 +238,7 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
                 f"Codex model: {chosen_model} (reasoning effort: high)",
                 joined,
             )
+            self.assertIn("Change mode: merge_request", joined)
             self.assertIn("Merge request title: Phase 2 Custom Title", joined)
 
     def test_task_allows_target_branch_override(self) -> None:
@@ -217,18 +275,68 @@ class Phase2TaskSubmissionTests(unittest.TestCase):
                 final_payload["mr_title"],
                 _build_mr_title(task_id, "Work off release branch"),
             )
+            self.assertEqual(final_payload["change_mode"], "merge_request")
+            self.assertTrue(final_payload.get("commit_sha"))
+            self.assertTrue(final_payload.get("commit_url"))
 
             logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
             self.assertEqual(logs_resp.status_code, 200)
             snapshot_payload = logs_resp.json()
             entries = snapshot_payload.get("entries", [])
             self.assertEqual(snapshot_payload.get("target_branch"), "release")
+            self.assertEqual(snapshot_payload.get("change_mode"), "merge_request")
             joined = "\n".join(entries)
             self.assertIn("Base branch override: release", joined)
             self.assertIn(
                 f"Merge request title: {_build_mr_title(task_id, 'Work off release branch')}",
                 joined,
             )
+            self.assertIn("Change mode: merge_request", joined)
+
+    def test_branch_commit_mode_creates_commit(self) -> None:
+        _, project_id = self._prepare_project()
+
+        with TestClient(self.main.app) as client:
+            task_resp = client.post(
+                "/tasks",
+                json={
+                    "project_id": project_id,
+                    "prompt": "Update docs on existing branch",
+                    "branch_name": "docs/improve-readme",
+                    "change_mode": "branch_commit",
+                    "mr_title": "Improve README guidance",
+                },
+            )
+            self.assertEqual(task_resp.status_code, 201, task_resp.text)
+            task_id = task_resp.json()["id"]
+
+            deadline = time.time() + 30
+            final_payload: dict | None = None
+            while time.time() < deadline:
+                detail_resp = client.get(f"/tasks/{task_id}")
+                self.assertEqual(detail_resp.status_code, 200)
+                final_payload = detail_resp.json()
+                if final_payload["status"] in {"done", "failed"}:
+                    break
+                time.sleep(0.2)
+
+            self.assertIsNotNone(final_payload)
+            assert final_payload is not None
+            self.assertEqual(final_payload["status"], "done")
+            self.assertEqual(final_payload["branch"], "docs/improve-readme")
+            self.assertEqual(final_payload["change_mode"], "branch_commit")
+            self.assertIsNone(final_payload.get("mr_url"))
+            self.assertTrue(final_payload.get("commit_sha"))
+            self.assertTrue(final_payload.get("commit_url"))
+
+            logs_resp = client.get(f"/tasks/{task_id}/logs?follow=0")
+            self.assertEqual(logs_resp.status_code, 200)
+            snapshot_payload = logs_resp.json()
+            entries = snapshot_payload.get("entries", [])
+            self.assertEqual(snapshot_payload.get("change_mode"), "branch_commit")
+            joined = "\n".join(entries)
+            self.assertIn("Change mode: branch_commit", joined)
+            self.assertIn("Commit pushed:", joined)
 
     def test_rejects_invalid_branch(self) -> None:
         _, project_id = self._prepare_project()

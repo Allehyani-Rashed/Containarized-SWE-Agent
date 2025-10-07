@@ -17,6 +17,11 @@ class TaskStatus(str, Enum):
     aborted = "aborted"
 
 
+class TaskChangeMode(str, Enum):
+    merge_request = "merge_request"
+    branch_commit = "branch_commit"
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -35,6 +40,14 @@ class Project(SQLModel, table=True):
         default_factory=list,
         sa_column=Column(JSON, nullable=False, default=list),
     )
+    last_active_count: Optional[int] = Field(default=None, nullable=True)
+
+
+class RunnerSetting(SQLModel, table=True):
+    key: str = Field(default=None, primary_key=True)
+    value: Optional[str] = Field(default=None, nullable=True)
+    updated_at: datetime = Field(default_factory=_utc_now, nullable=False)
+    updated_by: Optional[str] = Field(default=None, nullable=True)
 
 
 class IntegrationCredential(SQLModel, table=True):
@@ -69,6 +82,12 @@ class Task(SQLModel, table=True):
     target_branch: Optional[str] = Field(default=None, nullable=True)
     mr_title: Optional[str] = Field(default=None, nullable=True)
     mr_url: Optional[str] = Field(default=None, nullable=True)
+    change_mode: TaskChangeMode = Field(
+        default=TaskChangeMode.merge_request,
+        nullable=False,
+    )
+    commit_sha: Optional[str] = Field(default=None, nullable=True)
+    commit_url: Optional[str] = Field(default=None, nullable=True)
     workspace_path: Optional[str] = Field(default=None, nullable=True)
     codex_agent_version: Optional[str] = Field(default=None, nullable=True)
     codex_invocation: Optional[str] = Field(default=None, nullable=True)

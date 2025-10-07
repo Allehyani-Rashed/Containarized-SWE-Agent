@@ -81,6 +81,7 @@ def _ensure_project_columns(db_engine) -> None:
         "cache_quota_mb": "ALTER TABLE project ADD COLUMN cache_quota_mb INTEGER",
         "cache_prune_after_hours": "ALTER TABLE project ADD COLUMN cache_prune_after_hours INTEGER",
         "allowlist": "ALTER TABLE project ADD COLUMN allowlist JSON",
+        "last_active_count": "ALTER TABLE project ADD COLUMN last_active_count INTEGER",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}
@@ -88,6 +89,15 @@ def _ensure_project_columns(db_engine) -> None:
         with db_engine.begin() as connection:
             for ddl in pending.values():
                 connection.execute(text(ddl))
+        inspector = inspect(db_engine)
+        column_info = inspector.get_columns("project")
+        columns = {column["name"] for column in column_info}
+
+    if "max_concurrency" in columns:
+        _drop_project_columns(db_engine, column_info, {"max_concurrency"})
+        inspector = inspect(db_engine)
+        column_info = inspector.get_columns("project")
+        columns = {column["name"] for column in column_info}
 
     try:
         with db_engine.begin() as connection:
@@ -117,6 +127,34 @@ def _drop_legacy_project_local_path(
             connection.exec_driver_sql("PRAGMA foreign_keys=ON")
 
 
+def _drop_project_columns(
+    db_engine,
+    column_info: list[dict[str, object]],
+    columns_to_remove: set[str],
+) -> None:
+    new_columns = {column.name for column in Project.__table__.columns}
+    columns_to_copy = [
+        column["name"]
+        for column in column_info
+        if column["name"] not in columns_to_remove and column["name"] in new_columns
+    ]
+
+    with db_engine.begin() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        try:
+            connection.exec_driver_sql("ALTER TABLE project RENAME TO project_prune_legacy")
+            Project.__table__.create(connection, checkfirst=False)
+            if columns_to_copy:
+                column_csv = ", ".join(columns_to_copy)
+                insert_sql = (
+                    f"INSERT INTO project ({column_csv}) SELECT {column_csv} FROM project_prune_legacy"
+                )
+                connection.exec_driver_sql(insert_sql)
+            connection.exec_driver_sql("DROP TABLE project_prune_legacy")
+        finally:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+
+
 def _ensure_task_columns(db_engine) -> None:
     try:
         inspector = inspect(db_engine)
@@ -134,6 +172,9 @@ def _ensure_task_columns(db_engine) -> None:
         "cache_commit": "ALTER TABLE task ADD COLUMN cache_commit VARCHAR",
         "mr_title": "ALTER TABLE task ADD COLUMN mr_title VARCHAR",
         "target_branch": "ALTER TABLE task ADD COLUMN target_branch VARCHAR",
+        "change_mode": "ALTER TABLE task ADD COLUMN change_mode VARCHAR DEFAULT 'merge_request'",
+        "commit_sha": "ALTER TABLE task ADD COLUMN commit_sha VARCHAR",
+        "commit_url": "ALTER TABLE task ADD COLUMN commit_url VARCHAR",
     }
 
     pending = {name: ddl for name, ddl in statements.items() if name not in columns}

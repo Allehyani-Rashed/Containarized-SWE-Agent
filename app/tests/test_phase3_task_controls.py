@@ -119,7 +119,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
 
             from app.app.codex_runner import CodexResult, CodexRunnerAborted
 
-            def fake_run_codex(*args, **kwargs):  # type: ignore[no-untyped-def]
+            def fake_run_codex(self, *args, **kwargs):  # type: ignore[no-untyped-def]
                 abort_event = kwargs.get("abort_event")
                 start = time.time()
                 while time.time() - start < 2:
@@ -137,7 +137,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     codex_reasoning_effort=kwargs.get("codex_reasoning_effort"),
                 )
 
-            with patch("app.app.worker.run_codex", fake_run_codex):
+            with patch("app.app.worker.CodexExecutionService.execute", fake_run_codex):
                 create_response = client.post(
                     "/tasks",
                     json={
@@ -201,7 +201,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
 
             from app.app.codex_runner import CodexResult
 
-            def fast_run_codex(*args, **kwargs):  # type: ignore[no-untyped-def]
+            def fast_run_codex(self, *args, **kwargs):  # type: ignore[no-untyped-def]
                 return CodexResult(
                     exit_code=0,
                     used_docker=False,
@@ -213,7 +213,7 @@ class Phase3TaskLifecycleTests(unittest.TestCase):
                     codex_reasoning_effort=kwargs.get("codex_reasoning_effort"),
                 )
 
-            with patch("app.app.worker.run_codex", fast_run_codex):
+            with patch("app.app.worker.CodexExecutionService.execute", fast_run_codex):
                 create_response = client.post(
                     "/tasks",
                     json={
