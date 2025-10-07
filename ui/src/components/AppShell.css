@@ -7,7 +7,7 @@
 
 .app-content {
   flex: 1;
-  margin-left: 260px;
+  margin-left: var(--sidebar-width);
   display: flex;
   flex-direction: column;
   min-height: 100vh;
@@ -19,11 +19,11 @@
   z-index: 50;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border-primary);
-  padding: 1.5rem 2rem;
+  padding: var(--space-6) var(--space-8);
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1.5rem;
+  gap: var(--space-6);
   flex-wrap: wrap;
   box-shadow: var(--shadow-sm);
 }
@@ -34,39 +34,40 @@
 }
 
 .app-header-title {
-  margin: 0 0 0.375rem;
-  font-size: 1.875rem;
-  font-weight: 700;
-  color: #ffffff;
-  line-height: 1.2;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-3xl);
+  font-weight: var(--font-bold);
+  color: var(--text-primary);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tighter);
 }
 
 .app-header-subtitle {
   margin: 0;
-  font-size: 0.9375rem;
-  color: rgba(148, 163, 184, 0.9);
-  line-height: 1.4;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  line-height: var(--leading-normal);
   max-width: 640px;
 }
 
 .app-header-actions {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: var(--space-4);
   flex-shrink: 0;
 }
 
 .system-status {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  background: rgba(34, 197, 94, 0.2);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #a7f3d0;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  background: var(--status-online-bg);
+  border: 1px solid var(--status-online);
+  border-radius: var(--radius-full);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--status-online-text);
 }
 
 .status-indicator {
@@ -98,15 +99,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: var(--space-10);
+  height: var(--space-10);
   padding: 0;
-  border-radius: 1rem;
+  border-radius: var(--radius-xl);
   background: var(--bg-elevated);
   border: 1px solid var(--border-primary);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+  transition: background-color var(--transition-base), border-color var(--transition-base), color var(--transition-base), box-shadow var(--transition-base);
 }
 
 .icon-button:hover {
@@ -123,10 +124,10 @@
 
 .app-main-content {
   flex: 1;
-  padding: 2rem;
+  padding: var(--space-8);
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: var(--space-6);
   max-width: 1400px;
   width: 100%;
   margin: 0 auto;
@@ -134,34 +135,39 @@
 
 /* Mobile responsive */
 @media (max-width: 1024px) {
+  .app-shell-new {
+    flex-direction: column;
+  }
+
   .app-content {
     margin-left: 0;
+    min-height: auto;
   }
 
   .app-header {
-    padding: 1.25rem 1.5rem;
+    padding: var(--space-5) var(--space-6);
   }
 
   .app-header-title {
-    font-size: 1.5rem;
+    font-size: var(--text-2xl);
   }
 
   .app-header-subtitle {
-    font-size: 0.875rem;
+    font-size: var(--text-sm);
   }
 
   .app-main-content {
-    padding: 1.5rem 1rem;
+    padding: var(--space-6) var(--space-4);
   }
 
   .system-status {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.8125rem;
+    padding: var(--space-2) var(--space-3);
+    font-size: var(--text-xs);
   }
 
   .icon-button {
-    width: 2.25rem;
-    height: 2.25rem;
+    width: calc(var(--space-10) - 0.25rem);
+    height: calc(var(--space-10) - 0.25rem);
   }
 
   .icon-button svg {
@@ -174,6 +180,15 @@
   .app-header {
     flex-direction: column;
     align-items: flex-start;
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .app-header-title {
+    font-size: var(--text-xl);
+  }
+
+  .app-header-subtitle {
+    font-size: var(--text-sm);
   }
 
   .app-header-actions {
@@ -183,5 +198,9 @@
 
   .app-header-main {
     min-width: auto;
+  }
+
+  .app-main-content {
+    padding: var(--space-4) var(--space-4);
   }
 }

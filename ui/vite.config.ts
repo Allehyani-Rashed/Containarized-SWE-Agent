@@ -12,6 +12,11 @@ function spaBypass(req: IncomingMessage): string | undefined {
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    css: true,
+    include: ['src/__tests__/**/*.test.{ts,tsx}', 'src/**/*.test.{ts,tsx}'],
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
@@ -40,6 +45,11 @@ export default defineConfig({
         bypass: spaBypass
       },
       '/models': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        bypass: spaBypass
+      },
+      '/settings': {
         target: 'http://localhost:8000',
         changeOrigin: true,
         bypass: spaBypass

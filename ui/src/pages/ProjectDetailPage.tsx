@@ -90,7 +90,7 @@ function ProjectDetailPage() {
   };
 
   return (
-    <div className="page project-detail-page">
+    <div className="layout-page project-detail-page">
       <div className="project-detail-header">
         <button type="button" className="back-link" onClick={() => navigate('/projects')}>
           ← Back to Projects
@@ -103,34 +103,12 @@ function ProjectDetailPage() {
           <div className="action-buttons-row">
             <Button
               variant="primary"
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M11.333 2L14 4.667M1.333 14.667l2.89-2.89L1.333 14.667zm2.89-2.89L13.334 2.667c.368-.367.552-.551.621-.762a1 1 0 000-.81c-.069-.21-.253-.395-.621-.762l-.667-.666c-.368-.368-.552-.552-.762-.621a1 1 0 00-.81 0c-.21.069-.395.253-.762.621L1.223 9.778l3 3 3-3z"
-                    stroke="currentColor"
-                    strokeWidth="1.333"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              }
               onClick={() => navigate('/projects', { state: { editProjectId: summary.id } })}
             >
               Edit Project
             </Button>
             <Button
               variant="success"
-              icon={
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M8 1v14M1 8h14"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              }
               onClick={() => navigate('/', { state: { projectId: summary.id } })}
             >
               Submit Task
@@ -146,9 +124,9 @@ function ProjectDetailPage() {
       </div>
 
       {combinedError && <div className="error-banner">{combinedError}</div>}
-      {notice && <div className="notice notice-success">{notice}</div>}
+      {notice && <div className="alert alert-success">{notice}</div>}
 
-      {loading && <div className="notice">Loading project information…</div>}
+      {loading && <div className="alert alert-info">Loading project information…</div>}
 
       {summary && detail ? (
         <div className="project-detail-layout">
@@ -199,6 +177,14 @@ function ProjectDetailPage() {
                       : 'Disabled'
                   }
                 />
+                <InfoItem
+                  label="Last Active Workers"
+                  value={
+                    summary.last_active_count !== null
+                      ? summary.last_active_count
+                      : 'Unknown'
+                  }
+                />
                 <InfoItem label="Total Tasks" value={summary.total_task_count} />
                 <InfoItem label="Active Tasks" value={summary.active_task_count} />
               </InfoList>
@@ -215,11 +201,10 @@ function ProjectDetailPage() {
               <h2 className="section-title">Recent Tasks</h2>
               {detail.recent_tasks.length === 0 ? (
                 <EmptyState
-                  icon="clipboard"
                   title="No tasks yet"
                   description="This project has no recorded tasks. Submit a task to see it appear here."
-                  actionLabel="Create Task"
-                  onAction={() => navigate('/submit')}
+                  actionLabel="Submit Task"
+                  onAction={() => navigate('/', { state: { projectId: summary.id } })}
                 />
               ) : (
                 <div className="table-wrapper">
@@ -229,8 +214,10 @@ function ProjectDetailPage() {
                         <tr>
                           <th className="sticky-column">ID</th>
                           <th>Status</th>
+                          <th className="hide-tablet">Mode</th>
                           <th className="hide-mobile">Branch</th>
                           <th className="hide-tablet">Base</th>
+                          <th className="hide-mobile">Change</th>
                           <th className="hide-mobile">Model</th>
                           <th className="hide-tablet">Cache</th>
                           <th>Created</th>
@@ -243,8 +230,26 @@ function ProjectDetailPage() {
                             <td>
                               <StatusBadge status={task.status} />
                             </td>
+                            <td className="hide-tablet">
+                              <span className={`change-mode-chip change-mode-${task.change_mode}`}>
+                                {task.change_mode === 'branch_commit' ? 'Branch commit' : 'Merge request'}
+                              </span>
+                            </td>
                             <td className="hide-mobile">{task.branch ?? 'Auto-generated'}</td>
                             <td className="hide-tablet">{task.target_branch ?? 'Default'}</td>
+                            <td className="hide-mobile">
+                              {task.change_mode === 'merge_request'
+                                ? task.mr_title ?? '—'
+                                : task.commit_sha
+                                ? task.commit_url
+                                  ? (
+                                      <a href={task.commit_url} target="_blank" rel="noreferrer">
+                                        Commit {task.commit_sha?.slice(0, 7)}
+                                      </a>
+                                    )
+                                  : `Commit ${task.commit_sha?.slice(0, 7) ?? ''}`
+                                : 'Branch update'}
+                            </td>
                             <td className="hide-mobile">{task.codex_model ?? 'Default'}</td>
                             <td className="hide-tablet">{task.cache_commit ? task.cache_commit.slice(0, 7) : '—'}</td>
                             <td>{formatTimestamp(task.created_at)}</td>
@@ -278,7 +283,7 @@ function ProjectDetailPage() {
                     label="Last updated"
                     value={formatTimestamp(patStatus.updated_at) || 'Never'}
                   />
-                  <InfoItem label="Updated by" value="operator" />
+                  <InfoItem label="Updated by" value={patStatus.updated_by || '—'} />
                   <InfoItem
                     label="PAT Verification"
                     value={
@@ -316,7 +321,7 @@ function ProjectDetailPage() {
                   {patStatus.session_configured && (
                     <>
                       <InfoItem label="" value="Session bundle configured" />
-                      <InfoItem label="Updated by" value="operator" />
+                      <InfoItem label="Updated by" value={patStatus.session_updated_by || '—'} />
                     </>
                   )}
                 </InfoList>

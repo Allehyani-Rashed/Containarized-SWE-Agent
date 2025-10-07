@@ -120,9 +120,9 @@ function TaskSubmissionCard({
   }, [form.projectId, debouncedBranchQuery]);
 
   return (
-    <section className="panel">
+    <section className="panel task-submission-card">
       <h3>Task Submission</h3>
-      <form className="form" onSubmit={onSubmit}>
+      <form className="form-stack task-submission-form" onSubmit={onSubmit}>
         <label>
           Project
           <select
@@ -178,9 +178,9 @@ function TaskSubmissionCard({
               />
             ))}
           </datalist>
-          {branchLoading ? <p className="field-hint">Loading branches…</p> : null}
+          {branchLoading ? <p className="input-hint">Loading branches…</p> : null}
           {!branchLoading && branchError ? (
-            <p className="field-hint">Branches unavailable: {branchError}</p>
+            <p className="input-hint">Branches unavailable: {branchError}</p>
           ) : null}
         </label>
 
@@ -205,7 +205,7 @@ function TaskSubmissionCard({
             maxLength={240}
             required
           />
-          <p className="field-hint">Used as the GitLab merge request title (max 240 characters).</p>
+          <p className="input-hint">Used as the GitLab merge request title (max 240 characters).</p>
         </label>
 
         <label>
@@ -238,7 +238,7 @@ function TaskSubmissionCard({
           </select>
         </label>
         {selectedModel?.description ? (
-          <p className="field-hint">{selectedModel.description}</p>
+          <p className="input-hint">{selectedModel.description}</p>
         ) : null}
 
         <label>
@@ -259,10 +259,10 @@ function TaskSubmissionCard({
             ))}
           </select>
         </label>
-        <p className="field-hint">{reasoningHint}</p>
+        <p className="input-hint">{reasoningHint}</p>
 
         {!patStatus.configured && (
-          <p className="notice notice-warning">
+          <p className="alert alert-warning">
             Personal access token missing. Store a token in Settings before submitting a task.
           </p>
         )}

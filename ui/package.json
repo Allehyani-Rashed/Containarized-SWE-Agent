@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint src",
+    "test": "node ./scripts/run-tests.mjs",
     "test:e2e": "playwright test --config ./playwright.config.ts"
   },
   "dependencies": {
@@ -26,7 +27,9 @@
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
     "globals": "^15.1.0",
+    "jsdom": "^27.0.0",
     "typescript": "^5.4.5",
-    "vite": "^5.2.10"
+    "vite": "^5.2.10",
+    "vitest": "^1.6.0"
   }
 }

@@ -96,7 +96,7 @@ function ProjectDetailPageNew() {
   }, [detail]);
 
   return (
-    <div className="page project-detail-page-new">
+    <div className="layout-page project-detail-page-new">
       <div className="project-detail-hero">
         <button type="button" className="back-button" onClick={() => navigate('/projects')}>
           <Icon type="chevron-left" />
@@ -123,14 +123,12 @@ function ProjectDetailPageNew() {
             <div className="hero-actions">
               <Button
                 variant="primary"
-                icon={<Icon type="plus" />}
                 onClick={() => navigate('/', { state: { projectId: summary.id } })}
               >
                 Submit Task
               </Button>
               <Button
                 variant="secondary"
-                icon={<Icon type="edit" />}
                 onClick={() => navigate('/projects', { state: { editProjectId: summary.id } })}
               >
                 Edit Project
@@ -147,12 +145,12 @@ function ProjectDetailPageNew() {
       </div>
 
       {combinedError && <div className="error-banner">{combinedError}</div>}
-      {notice && <div className="notice notice-success">{notice}</div>}
+      {notice && <div className="alert alert-success">{notice}</div>}
 
-      {loading && <div className="notice">Loading project information…</div>}
+      {loading && <div className="alert alert-info">Loading project information…</div>}
 
       {summary && detail ? (
-        <div className="project-detail-grid">
+        <div className="grid">
           {/* Quick Stats Row */}
           <div className="stats-row">
             <Card className="stat-card">

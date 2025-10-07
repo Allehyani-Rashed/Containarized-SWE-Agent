@@ -1,4 +1,4 @@
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useMemo } from 'react';
 import { useProjects } from '../hooks/useProjectsData';
 import Sidebar from './Sidebar';
@@ -15,6 +15,7 @@ const pageNames: Record<string, string> = {
 
 function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { projects } = useProjects();
 
   // Get page title from pathname, handling project detail pages
@@ -93,10 +94,10 @@ function AppShell() {
       return 'View task history, monitor execution logs, and manage your agent workflow runs';
     }
     if (location.pathname === '/projects') {
-      return 'Register repositories, manage credentials, and configure project-specific settings';
+      return 'Add repositories, manage credentials, and configure project-specific settings';
     }
     if (location.pathname === '/settings') {
-      return 'Configure GitLab PAT, ChatGPT session credentials, and integration settings';
+      return 'Manage credentials and system configuration';
     }
     if (location.pathname === '/help') {
       return 'Get started, find answers to common questions, and troubleshoot issues';
@@ -121,16 +122,7 @@ function AppShell() {
             <p className="app-header-subtitle">{pageSubtitle}</p>
           </div>
           <div className="app-header-actions">
-            <div className="system-status">
-              <span className="status-indicator status-online"></span>
-              <span className="status-text">System Online</span>
-            </div>
-            <button className="icon-button" aria-label="Notifications" title="Notifications">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/>
-              </svg>
-            </button>
-            <button className="icon-button" aria-label="Help" title="Help">
+            <button className="icon-button" aria-label="Help & Documentation" title="Help & Documentation" onClick={() => navigate('/help')}>
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"/>
               </svg>

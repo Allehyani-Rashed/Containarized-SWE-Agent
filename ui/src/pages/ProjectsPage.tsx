@@ -202,7 +202,7 @@ function ProjectsPage() {
   };
 
   return (
-    <div className="page projects-page-new">
+    <div className="layout-page projects-page-new">
       {combinedError ? (
         <div className="error-banner">
           <span>{combinedError}</span>
@@ -216,7 +216,7 @@ function ProjectsPage() {
           </button>
         </div>
       ) : null}
-      {successMessage && <div className="notice notice-success">{successMessage}</div>}
+      {successMessage && <div className="alert alert-success">{successMessage}</div>}
 
       {projects.length > 0 && (
         <div className="projects-filters">
@@ -296,8 +296,8 @@ function ProjectsPage() {
       ) : projects.length === 0 ? (
         <EmptyState
           icon="folder"
-          title="No projects registered"
-          description="Register your first project to start running AI agent tasks. Projects connect your GitLab repositories to the Codex runner."
+          title="No projects configured"
+          description="Add your first project to start running AI agent tasks. Projects connect your GitLab repositories to the Codex runner."
         />
       ) : sortedProjects.length === 0 ? (
         <EmptyState

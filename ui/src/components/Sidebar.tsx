@@ -24,8 +24,8 @@ function Sidebar() {
           </svg>
         </div>
         <div className="sidebar-brand-text">
-          <div className="sidebar-brand-title">Codex Operator</div>
-          <div className="sidebar-brand-subtitle">Agent Runner UI</div>
+          <div className="sidebar-brand-title">Codex Agent</div>
+          <div className="sidebar-brand-subtitle">Containerized Runner</div>
         </div>
       </div>
 

@@ -1,26 +1,26 @@
 .input-group {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .input-label {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: rgba(226, 232, 240, 0.95);
-  letter-spacing: -0.01em;
+  gap: var(--space-2);
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--text-primary);
+  letter-spacing: var(--tracking-wide);
 }
 
 .input-tooltip {
   display: inline-flex;
   align-items: center;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
   cursor: help;
-  transition: color 0.2s ease;
+  transition: color var(--transition-fast);
 }
 
 .input-tooltip:hover {
@@ -28,8 +28,8 @@
 }
 
 .input-required {
-  color: #f87171;
-  margin-left: 0.15rem;
+  color: var(--error-300);
+  margin-left: var(--space-1);
 }
 
 .input-wrapper {
@@ -42,14 +42,14 @@
 .textarea,
 .select {
   width: 100%;
-  border-radius: 1rem;
+  border-radius: var(--radius-xl);
   border: 1px solid var(--border-primary);
   background: var(--bg-elevated);
   color: var(--text-primary);
-  padding: 0.7rem 0.9rem;
-  font-size: 0.95rem;
-  font-family: inherit;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  padding: var(--space-3) var(--space-3);
+  font-size: var(--text-base);
+  font-family: var(--font-sans);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
 
 .input:focus,
@@ -58,12 +58,12 @@
   outline: none;
   border-color: var(--border-focus);
   background: var(--surface-elevated);
-  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
+  box-shadow: var(--shadow-focus-blue);
 }
 
 .input::placeholder,
 .textarea::placeholder {
-  color: rgba(148, 163, 184, 0.55);
+  color: var(--text-tertiary);
 }
 
 .input-error {
@@ -72,7 +72,7 @@
 
 .input-error:focus {
   border-color: var(--error-500);
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.15);
+  box-shadow: var(--shadow-focus-error);
 }
 
 .input-success {
@@ -81,7 +81,7 @@
 
 .input-success:focus {
   border-color: var(--success-500);
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.15); /* Design system doesn't have success shadow */
 }
 
 .input-with-validation {
@@ -98,11 +98,11 @@
 }
 
 .validation-error {
-  color: #f87171;
+  color: var(--error-300);
 }
 
 .validation-success {
-  color: #22c55e;
+  color: var(--success-400);
 }
 
 @keyframes fadeIn {
@@ -122,23 +122,17 @@
 
 .input-icon {
   position: absolute;
-  left: 0.75rem;
+  left: var(--space-3);
   display: flex;
   align-items: center;
-  color: rgba(148, 163, 184, 0.85);
+  color: var(--text-secondary);
   pointer-events: none;
-  font-size: 1.1rem;
+  font-size: var(--text-lg);
 }
 
 .input-error-text {
-  font-size: 0.85rem;
-  color: #fca5a5;
-  display: block;
-}
-
-.input-hint {
-  font-size: 0.85rem;
-  color: rgba(148, 163, 184, 0.9);
+  font-size: var(--text-sm);
+  color: var(--error-200);
   display: block;
 }
 
@@ -146,28 +140,28 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .char-count {
-  font-size: 0.8rem;
-  color: rgba(148, 163, 184, 0.85);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
 .textarea {
   resize: vertical;
-  min-height: 6rem;
-  font-family: inherit;
+  min-height: 120px;
+  font-family: var(--font-sans);
 }
 
 .select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='%2394a3b8'%3E%3Cpath d='M4.427 6.427l3.396 3.396a.25.25 0 00.354 0l3.396-3.396A.25.25 0 0011.396 6H4.604a.25.25 0 00-.177.427z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
+  background-position: right var(--space-3) center;
   background-size: 16px;
-  padding-right: 2.5rem;
+  padding-right: var(--space-10);
   cursor: pointer;
 }
 

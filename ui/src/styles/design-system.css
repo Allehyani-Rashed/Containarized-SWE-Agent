@@ -3,17 +3,31 @@
  * Extracted from UX Pilot design document
  */
 
-:root {
+/* All design tokens live under the theme root class so we can swap palettes later */
+body.theme-dark,
+.theme-dark {
   /* ==================== Color Palette ==================== */
 
-  /* Background Colors - Dark Theme */
+  /* Background Colors - Dark Theme
+   * --bg-primary: Main app background (darkest)
+   * --bg-secondary: Card and panel backgrounds (most common for containers)
+   * --bg-tertiary: Alternative content background
+   * --bg-elevated: Higher elevation surfaces
+   * --bg-overlay: Modal/drawer backdrop overlays
+   */
   --bg-primary: #0A0E14;
   --bg-secondary: #151A21;
   --bg-tertiary: #1C2128;
   --bg-elevated: #242A32;
   --bg-overlay: rgba(10, 14, 20, 0.95);
 
-  /* Surface Colors */
+  /* Surface Colors
+   * --surface-default: Base surface color for content areas
+   * --surface-elevated: Used for interactive elements in active/focused states (buttons, nav links, inputs)
+   * --surface-hover: Hover state for interactive elements
+   * --surface-active: Active/pressed state for interactive elements
+   * --surface-dark/darker: Semi-transparent overlays
+   */
   --surface-default: #1C2128;
   --surface-elevated: #242A32;
   --surface-hover: #2D3440;
@@ -43,6 +57,9 @@
   --success-500: #16a34a;
   --success-600: #15803d;
   --success: var(--success-400);
+  --success-bg: rgba(34, 197, 94, 0.25);
+  --success-bg-subtle: rgba(34, 197, 94, 0.15);
+  --border-success-subtle: rgba(34, 197, 94, 0.3);
 
   /* Warning Colors */
   --warning-50: #fef3c7;
@@ -63,11 +80,14 @@
   --error-500: #dc2626;
   --error-600: #b91c1c;
   --error: var(--error-400);
+  --error-bg: rgba(248, 113, 113, 0.25);
 
   /* Info Colors */
+  --info-100: #cffafe;
   --info-400: #06B6D4;
   --info-500: #0891B2;
   --info: var(--info-400);
+  --info-bg: rgba(34, 211, 238, 0.2);
 
   /* Orange/Amber Colors */
   --orange-200: #fed7aa;
@@ -77,6 +97,7 @@
   --orange-bg: rgba(251, 146, 60, 0.2);
 
   /* Purple Colors */
+  --purple-100: #e9d5ff;
   --purple-400: #c084fc;
   --purple-500: #a855f7;
   --purple-600: #9333ea;
@@ -101,7 +122,17 @@
   --text-disabled: #4B5563;
   --text-inverse: #0A0E14;
 
-  /* Border Colors */
+  /* Border Colors
+   * --border-primary: Main borders for cards, panels, inputs (most common)
+   * --border-secondary: Secondary borders for nested containers
+   * --border-tertiary: Tertiary borders (rarely used)
+   * --border-focus: Focus state borders (blue)
+   * --border-error: Error state borders (red)
+   * --border-success: Success state borders (green)
+   * --border-subtle: Subtle dividers and separators (low opacity)
+   * --border-subtle-light: Very subtle dividers (lower opacity)
+   * --border-steel: Medium opacity borders for content dividers
+   */
   --border-primary: #2D3440;
   --border-secondary: #242A32;
   --border-tertiary: #1C2128;
@@ -126,6 +157,7 @@
   --color-blue-container-active: rgba(14, 165, 233, 0.22);
 
   /* Blue Border Colors */
+  --border-blue-subtle: rgba(14, 165, 233, 0.3);
   --border-blue-hover: rgba(14, 165, 233, 0.75);
   --border-blue-active: rgba(14, 165, 233, 0.9);
 
@@ -135,7 +167,12 @@
   /* Modal/Overlay Backgrounds */
   --bg-modal-overlay: rgba(0, 0, 0, 0.7);
 
-  /* Status Colors (matching design) */
+  /* Status Colors (matching design)
+   * Each status has three variants:
+   * - Base color: For badges, borders, and icons
+   * - Background: Semi-transparent for status cards/alerts
+   * - Text: Lighter shade for text on dark backgrounds
+   */
   --status-pending: #f59e0b;
   --status-pending-bg: rgba(251, 146, 60, 0.2);
   --status-pending-text: #fed7aa;
@@ -195,19 +232,20 @@
   /* ==================== Typography ==================== */
 
   /* Font Families */
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Mono', 'Droid Sans Mono', 'Source Code Pro', monospace;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Consolas', 'Inconsolata', 'Fira Mono', 'Source Code Pro', monospace;
 
-  /* Font Sizes */
+  /* Font Sizes - Modular Scale (1.25 - Major Third) */
   --text-xs: 0.75rem;      /* 12px */
   --text-sm: 0.875rem;     /* 14px */
   --text-base: 1rem;       /* 16px */
-  --text-lg: 1.125rem;     /* 18px */
-  --text-xl: 1.25rem;      /* 20px */
-  --text-2xl: 1.5rem;      /* 24px */
-  --text-3xl: 1.875rem;    /* 30px */
-  --text-4xl: 2.25rem;     /* 36px */
-  --text-5xl: 3rem;        /* 48px */
+  --text-md: 1.125rem;     /* 18px - NEW intermediate size */
+  --text-lg: 1.25rem;      /* 20px */
+  --text-xl: 1.5rem;       /* 24px */
+  --text-2xl: 1.875rem;    /* 30px */
+  --text-3xl: 2.25rem;     /* 36px */
+  --text-4xl: 3rem;        /* 48px */
+  --text-5xl: 3.75rem;     /* 60px */
 
   /* Line Heights */
   --leading-none: 1;
@@ -223,6 +261,14 @@
   --font-medium: 500;
   --font-semibold: 600;
   --font-bold: 700;
+
+  /* Letter Spacing - Optical Adjustments */
+  --tracking-tighter: -0.02em;  /* For large headings */
+  --tracking-tight: -0.01em;    /* For medium headings */
+  --tracking-normal: 0;         /* Default */
+  --tracking-wide: 0.025em;     /* For body text emphasis */
+  --tracking-wider: 0.05em;     /* For labels */
+  --tracking-widest: 0.08em;    /* For small caps/uppercase */
 
   /* ==================== Spacing Scale ==================== */
 

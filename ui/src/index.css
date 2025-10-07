@@ -1,11 +1,11 @@
 /* Import Design System */
 @import './styles/design-system.css';
+@import './styles/components.css';
 
 :root {
   font-family: var(--font-sans);
   line-height: var(--leading-normal);
   font-weight: var(--font-normal);
-  color-scheme: dark;
 
   /* Anti-aliasing */
   -webkit-font-smoothing: antialiased;
@@ -22,56 +22,60 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
   font-size: var(--text-base);
 }
 
+body.theme-dark {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  color-scheme: dark;
+}
+
 /* Scrollbar Styling - Dark Theme */
-::-webkit-scrollbar {
+body.theme-dark ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
 
-::-webkit-scrollbar-track {
+body.theme-dark ::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
 
-::-webkit-scrollbar-thumb {
+body.theme-dark ::-webkit-scrollbar-thumb {
   background: var(--gray-600);
   border-radius: var(--radius-base);
   border: 2px solid var(--bg-secondary);
 }
 
-::-webkit-scrollbar-thumb:hover {
+body.theme-dark ::-webkit-scrollbar-thumb:hover {
   background: var(--gray-500);
 }
 
 /* Selection */
-::selection {
+body.theme-dark ::selection {
   background-color: var(--primary-500);
   color: var(--text-primary);
 }
 
 /* Focus Visible */
-:focus-visible {
+body.theme-dark :focus-visible {
   outline: 2px solid var(--primary-500);
   outline-offset: 2px;
 }
 
 /* Links */
-a {
+body.theme-dark a {
   color: var(--primary-400);
   text-decoration: none;
   transition: color var(--transition-fast);
 }
 
-a:hover {
+body.theme-dark a:hover {
   color: var(--primary-300);
 }
 
 /* Code */
-code {
+body.theme-dark code {
   font-family: var(--font-mono);
   font-size: 0.9em;
   background-color: var(--color-blue-container-light);

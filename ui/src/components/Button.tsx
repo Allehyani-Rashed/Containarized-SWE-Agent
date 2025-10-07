@@ -1,5 +1,5 @@
 import { ReactNode, ButtonHTMLAttributes } from 'react';
-import './Button.css';
+// Button styles are defined in styles/components.css
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
@@ -35,7 +35,7 @@ function Button({
   return (
     <button className={combinedClass} disabled={disabled} type={type} {...rest}>
       {icon && iconPosition === 'left' && <span className="btn-icon">{icon}</span>}
-      <span className="btn-text">{children}</span>
+      <span>{children}</span>
       {icon && iconPosition === 'right' && <span className="btn-icon">{icon}</span>}
     </button>
   );

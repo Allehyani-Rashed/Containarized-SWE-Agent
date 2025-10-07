@@ -20,9 +20,9 @@ function ProjectCard({
   project,
   onView,
   onEdit,
-  _onDelete,
+  onDelete: _onDelete,
   onSubmitTask,
-  _onCopyRefreshCLI,
+  onCopyRefreshCLI: _onCopyRefreshCLI,
   patConfigured,
   sessionConfigured,
 }: ProjectCardProps) {
@@ -98,7 +98,7 @@ function ProjectCard({
             onClick={(e) => e.stopPropagation()}
           >
             <Icon type="git" />
-            <span>{project.repository_url.replace(/^https?:\/\//, '').substring(0, 40)}...</span>
+            <span>{project.repository_url.replace(/^https?:\/\//, '')}</span>
           </a>
         )}
       </div>
@@ -139,7 +139,7 @@ function ProjectCard({
       <div className="project-card-footer">
         <div className="project-card-task-count">
           <Icon type="clipboard" />
-          <span className="task-count-active">{project.active_task_count}</span>
+          <span className="task-count-active">{project.last_active_count ?? project.active_task_count}</span>
           <span className="task-count-total">/ {project.total_task_count} tasks</span>
         </div>
 

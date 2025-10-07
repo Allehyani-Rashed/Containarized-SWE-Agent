@@ -35,6 +35,8 @@ export type IconType =
   | 'check-circle'
   | 'chevron-left'
   | 'git'
+  | 'git-branch'
+  | 'git-merge'
   | 'external-link'
   | 'plus'
   | 'cpu'
@@ -306,6 +308,27 @@ function Icon({ type, size = 20, className = '', style = {} }: IconProps) {
           <circle cx="18" cy="6" r="3" />
           <circle cx="6" cy="18" r="3" />
           <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+      );
+
+    case 'git-branch':
+      // Git branch icon (simplified)
+      return (
+        <svg {...baseProps}>
+          <line x1="6" y1="3" x2="6" y2="15" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="6" cy="18" r="3" />
+          <path d="M18 9a9 9 0 0 1-9 9" />
+        </svg>
+      );
+
+    case 'git-merge':
+      // Git merge icon
+      return (
+        <svg {...baseProps}>
+          <circle cx="18" cy="18" r="3" />
+          <circle cx="6" cy="6" r="3" />
+          <path d="M6 21V9a9 9 0 0 0 9 9" />
         </svg>
       );
 

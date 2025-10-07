@@ -1,5 +1,7 @@
 export type CacheStatus = 'missing' | 'present' | 'ready' | string;
 
+export type TaskChangeMode = 'merge_request' | 'branch_commit';
+
 export type Project = {
   id: number;
   name: string;
@@ -19,6 +21,7 @@ export type Project = {
   cache_quota_mb: number | null;
   cache_prune_after_hours: number | null;
   last_cache_commit: string | null;
+  last_active_count: number | null;
 };
 
 export type ProjectAllowlistStatus = 'unknown' | 'empty' | 'custom';
@@ -30,6 +33,9 @@ export type ProjectTaskSummary = {
   branch: string | null;
   target_branch: string | null;
   mr_title: string | null;
+  change_mode: TaskChangeMode;
+  commit_sha: string | null;
+  commit_url: string | null;
   codex_model: string | null;
   codex_reasoning_effort: string | null;
   created_at: string;
@@ -70,6 +76,9 @@ export type Task = {
   target_branch: string | null;
   mr_title: string | null;
   mr_url: string | null;
+  change_mode: TaskChangeMode;
+  commit_sha: string | null;
+  commit_url: string | null;
   workspace_path: string | null;
   codex_agent_version: string | null;
   codex_invocation: string | null;
@@ -77,6 +86,7 @@ export type Task = {
   codex_reasoning_effort: string | null;
   abort_requested: boolean;
   cache_commit: string | null;
+  credentials: TaskCredentialStatus;
 };
 
 export type TaskListResponse = {
@@ -93,9 +103,13 @@ export type TaskLogsSnapshot = {
   status: TaskStatus;
   branch: string | null;
   target_branch: string | null;
+  change_mode: TaskChangeMode;
+  commit_sha: string | null;
+  commit_url: string | null;
   codex_model: string | null;
   codex_reasoning_effort: string | null;
   abort_requested: boolean;
+  credentials: TaskCredentialStatus;
 };
 
 export type ProjectCreatePayload = {
@@ -131,11 +145,12 @@ export type TaskCreatePayload = {
   codex_model?: string;
   codex_reasoning_effort?: string;
   mr_title?: string;
+  change_mode?: TaskChangeMode;
 };
 
 export type PatStorePayload = {
   token: string;
-  updated_by: string | null;
+  updated_by?: string | null;
 };
 
 export type PatClearPayload = {
@@ -144,7 +159,7 @@ export type PatClearPayload = {
 
 export type SessionPayload = {
   bundle: string;
-  updated_by: string | null;
+  updated_by?: string | null;
 };
 
 export type SessionClearPayload = {
@@ -170,4 +185,24 @@ export type ProjectBranch = {
 export type ProjectBranchList = {
   items: ProjectBranch[];
   next_page: number | null;
+};
+
+export type ConcurrencySettings = {
+  project_limit: number;
+  effective_project_limit: number;
+  worker_pool_size: number;
+  parallel_enabled: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+};
+
+export type ConcurrencySettingsUpdatePayload = {
+  project_limit: number;
+};
+
+export type TaskCredentialStatus = {
+  gitlab_pat_available: boolean;
+  gitlab_pat_last_updated: string | null;
+  chatgpt_session_available: boolean;
+  chatgpt_session_last_updated: string | null;
 };

@@ -34,10 +34,9 @@ function TroubleshootingItem({ problem, solution }: TroubleshootingItemProps) {
 
 function HelpPage() {
   return (
-    <div className="page">
-      <div className="help-layout">
-        {/* Getting Started Section */}
-        <section className="help-section">
+    <div className="layout-page">
+      {/* Getting Started Section */}
+      <section className="help-section">
           <Card>
             <div className="section-header">
               <div className="section-icon section-icon-blue"><Icon type="rocket" size={24} /></div>
@@ -142,6 +141,7 @@ function HelpPage() {
                       </p>
                       <p className="faq-detail">
                         To create one: Go to GitLab → Settings → Access Tokens → Create Personal Access Token
+                        (path may vary by GitLab version)
                       </p>
                     </>
                   }
@@ -181,8 +181,9 @@ function HelpPage() {
                         session tokens and browser fingerprints required for API access.
                       </p>
                       <p className="faq-detail">
-                        The bundle is exported from your browser and imported into the Settings page. It&apos;s
-                        encrypted and stored securely.
+                        The bundle is exported from your browser and imported into the Settings page. Session bundles
+                        are encrypted via Fernet before storage. GitLab PATs are sourced from the .env file for
+                        local deployments.
                       </p>
                     </>
                   }
@@ -314,7 +315,7 @@ function HelpPage() {
                       </p>
                       <ol className="troubleshooting-steps">
                         <li>Go to Settings and verify your credentials are configured</li>
-                        <li>Click &quot;Verify PAT Access&quot; to test the GitLab token</li>
+                        <li>Click &quot;Verify&quot; to test the GitLab token</li>
                         <li>Ensure your session bundle is current (not expired)</li>
                         <li>Re-import credentials if verification fails</li>
                       </ol>
@@ -464,7 +465,7 @@ function HelpPage() {
                       <ol className="troubleshooting-steps">
                         <li>Refresh the browser page</li>
                         <li>Check browser console for errors</li>
-                        <li>Verify backend is running: <code>curl http://localhost:8000/health</code></li>
+                        <li>Verify backend is running: <code>curl http://localhost:8000/</code></li>
                         <li>Disable browser extensions that might block SSE</li>
                       </ol>
                     </>
@@ -555,18 +556,18 @@ function HelpPage() {
                 iconColor="orange"
               >
                 <ul className="faq-list-items">
-                  <li>Never commit PATs or session bundles to version control</li>
+                  <li>Never commit .env files, PATs, or session bundles to version control</li>
                   <li>Rotate credentials regularly (recommended: every 30 days)</li>
-                  <li>Use minimal required scopes for GitLab PATs</li>
+                  <li>Use minimal required scopes for GitLab PATs (api, read_user, read_repository)</li>
                   <li>Keep allowlists restrictive - only add necessary domains</li>
                   <li>Monitor task logs for suspicious network activity</li>
                   <li>Review merge requests before merging agent-generated code</li>
+                  <li>Session bundles are encrypted; PATs are loaded from .env (local deployments)</li>
                 </ul>
               </InfoPanel>
             </div>
           </Card>
         </section>
-      </div>
     </div>
   );
 }

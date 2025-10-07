@@ -149,7 +149,7 @@
 .info-item-label {
   font-size: 0.8rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-wider);
   color: rgba(148, 163, 184, 0.85);
   font-weight: 600;
 }

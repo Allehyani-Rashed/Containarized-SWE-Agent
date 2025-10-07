@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { createTask, listTasks } from '../api/tasks';
 import { listCodexModels } from '../api/models';
 import { listProjectBranches } from '../api/projects';
-import { CodexModel, TaskCreatePayload, ProjectBranch, Task } from '../types';
+import { CodexModel, TaskCreatePayload, ProjectBranch, Task, TaskChangeMode } from '../types';
 import { formatTimestamp } from '../utils/time';
 import { useProjects } from '../hooks/useProjectsData';
 import { usePatStatus } from '../hooks/usePatStatus';
@@ -24,6 +24,7 @@ type TaskSubmissionFormState = {
   prompt: string;
   targetBranch: string;
   branchName: string;
+  changeMode: TaskChangeMode;
   codexModel: string;
   codexReasoningEffort: 'low' | 'medium' | 'high';
   mrTitle: string;
@@ -38,6 +39,7 @@ const initialFormState: TaskSubmissionFormState = {
   prompt: '',
   targetBranch: '',
   branchName: '',
+  changeMode: 'merge_request',
   codexModel: '',
   codexReasoningEffort: 'medium',
   mrTitle: '',
@@ -70,6 +72,8 @@ function TaskSubmitPage() {
     return projects.find((project) => String(project.id) === form.projectId) ?? null;
   }, [form.projectId, projects]);
 
+  const isBranchCommit = form.changeMode === 'branch_commit';
+
   // Validation logic
   const validateField = (field: keyof TaskSubmissionFormState, value: string): string | null => {
     switch (field) {
@@ -79,15 +83,28 @@ function TaskSubmitPage() {
         if (!value.trim()) return 'Task instructions are required';
         if (value.trim().length < 10) return 'Please provide more detailed instructions (at least 10 characters)';
         return null;
-      case 'mrTitle':
-        if (!value.replace(/\s+/g, ' ').trim()) return 'Merge request title is required';
-        if (value.replace(/\s+/g, ' ').trim().length > 240) return 'Title cannot exceed 240 characters';
+      case 'mrTitle': {
+        const normalizedTitle = value.replace(/\s+/g, ' ').trim();
+        if (!normalizedTitle) {
+          return form.changeMode === 'branch_commit'
+            ? 'Commit message is required'
+            : 'Merge request title is required';
+        }
+        if (normalizedTitle.length > 240) {
+          return form.changeMode === 'branch_commit'
+            ? 'Commit message cannot exceed 240 characters'
+            : 'Title cannot exceed 240 characters';
+        }
         return null;
+      }
       case 'targetBranch':
         // Optional but should be valid if provided
         return null;
       case 'branchName':
-        // Optional
+        // Branch name is optional for merge requests (auto-generated if empty)
+        // Not used at all for branch commits (field is hidden)
+        return null;
+      case 'changeMode':
         return null;
       default:
         return null;
@@ -111,7 +128,23 @@ function TaskSubmitPage() {
   };
 
   const handleFieldChange = (field: keyof TaskSubmissionFormState, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setForm((prev) => {
+      const next = { ...prev, [field]: value };
+      // Clear branchName when switching to branch_commit mode (not used)
+      if (field === 'changeMode' && value === 'branch_commit') {
+        next.branchName = '';
+      }
+      return next;
+    });
+
+    if (field === 'changeMode') {
+      setTouchedFields((prev) => {
+        const next = new Set(prev);
+        // Remove branchName from touched fields when not in merge_request mode
+        next.delete('branchName');
+        return next;
+      });
+    }
 
     // Real-time validation for touched fields
     if (touchedFields.has(field)) {
@@ -127,7 +160,11 @@ function TaskSubmitPage() {
   };
 
   // Calculate form completion progress
-  const requiredFields: Array<keyof TaskSubmissionFormState> = ['projectId', 'prompt', 'mrTitle'];
+  const requiredFields = useMemo<Array<keyof TaskSubmissionFormState>>(() => {
+    const fields: Array<keyof TaskSubmissionFormState> = ['projectId', 'prompt', 'mrTitle'];
+    // branchName is optional for merge requests and not used for branch commits
+    return fields;
+  }, [form.changeMode]);
 
   // Auto-select first project on load
   useEffect(() => {
@@ -147,6 +184,7 @@ function TaskSubmitPage() {
       prompt?: string;
       targetBranch?: string;
       branchName?: string;
+      changeMode?: TaskChangeMode;
       codexModel?: string;
       codexReasoningEffort?: 'low' | 'medium' | 'high';
       mrTitle?: string;
@@ -167,6 +205,10 @@ function TaskSubmitPage() {
           prompt: state.prompt || prev.prompt,
           targetBranch: state.targetBranch || target?.default_branch || prev.targetBranch,
           branchName: state.branchName ?? prev.branchName,
+          changeMode:
+            state.changeMode && ['merge_request', 'branch_commit'].includes(state.changeMode)
+              ? state.changeMode
+              : prev.changeMode,
           codexModel: state.codexModel || prev.codexModel,
           codexReasoningEffort: state.codexReasoningEffort || prev.codexReasoningEffort,
           mrTitle: state.mrTitle || prev.mrTitle,
@@ -280,6 +322,7 @@ function TaskSubmitPage() {
       project_id: Number(form.projectId),
       prompt: form.prompt,
       mr_title: normalizedMrTitle,
+      change_mode: form.changeMode,
     };
 
     if (form.targetBranch.trim()) {
@@ -373,26 +416,65 @@ function TaskSubmitPage() {
                 hint={projects.length === 0 ? "You need to add at least one project before submitting tasks" : undefined}
               />
 
+              <div className="change-mode-field">
+                <label className="change-mode-label">
+                  Change Destination
+                </label>
+                <div className="change-mode-segmented">
+                  <button
+                    type="button"
+                    className={`change-mode-button ${form.changeMode === 'merge_request' ? 'active' : ''}`}
+                    onClick={() => handleFieldChange('changeMode', 'merge_request')}
+                    title="Create a new branch and open a merge request for review"
+                  >
+                    <Icon type="git-merge" size={18} />
+                    Create Merge Request
+                  </button>
+                  <button
+                    type="button"
+                    className={`change-mode-button ${isBranchCommit ? 'active' : ''}`}
+                    onClick={() => handleFieldChange('changeMode', 'branch_commit')}
+                    title="Commit changes directly to an existing branch"
+                  >
+                    <Icon type="git-branch" size={18} />
+                    Update Existing Branch
+                  </button>
+                </div>
+                <p className="change-mode-hint">
+                  {form.changeMode === 'merge_request'
+                    ? 'Creates a new task branch from the base branch and opens a merge request'
+                    : 'Commits changes directly to the target branch without creating a merge request'}
+                </p>
+              </div>
+
               <div className="field-grid field-grid-two">
                 <TextInput
-                  label="Base Branch"
-                  tooltip="The branch to use as the base for the new task branch (defaults to the project's default branch)"
+                  label={isBranchCommit ? 'Target Branch' : 'Base Branch'}
+                  tooltip={
+                    isBranchCommit
+                      ? 'The existing branch where commits will be pushed directly'
+                      : 'The branch to use as the base for creating the new task branch'
+                  }
                   value={form.targetBranch}
                   onChange={(e) => handleFieldChange('targetBranch', e.target.value)}
                   onBlur={() => handleFieldBlur('targetBranch')}
-                  placeholder="main"
+                  placeholder={selectedProject?.default_branch || 'main'}
                   hint="Start typing to see suggestions from your repository"
                   list="branch-suggestions"
                 />
 
-                <TextInput
-                  label="Branch Name (Optional)"
-                  tooltip="Custom branch name (leave empty to auto-generate based on task details)"
-                  value={form.branchName}
-                  onChange={(e) => handleFieldChange('branchName', e.target.value)}
-                  placeholder="feature/new-functionality"
-                  hint="Leave empty to auto-generate based on task"
-                />
+                {!isBranchCommit && (
+                  <TextInput
+                    label="Branch Name (Optional)"
+                    tooltip="Custom branch name for the new task branch (leave empty to auto-generate based on task and date)"
+                    value={form.branchName}
+                    onChange={(e) => handleFieldChange('branchName', e.target.value)}
+                    onBlur={() => handleFieldBlur('branchName')}
+                    placeholder="feature/new-functionality"
+                    hint="Leave empty to auto-generate (e.g., codex/task-2025-01-15-42)"
+                    className="field-with-transition"
+                  />
+                )}
               </div>
 
               {branchOptions.length > 0 && (
@@ -404,15 +486,25 @@ function TaskSubmitPage() {
               )}
 
               <TextInput
-                label="Merge Request Title"
+                label={isBranchCommit ? 'Commit Message' : 'Merge Request Title'}
                 required
-                tooltip="A clear, descriptive title for the merge request that will be created"
+                tooltip={
+                  isBranchCommit
+                    ? 'A concise summary for the commit that will be pushed to the selected branch'
+                    : 'A clear, descriptive title for the merge request that will be created'
+                }
                 value={form.mrTitle}
                 onChange={(e) => handleFieldChange('mrTitle', e.target.value)}
                 onBlur={() => handleFieldBlur('mrTitle')}
-                placeholder="Implement new feature or fix"
+                placeholder={
+                  isBranchCommit ? 'Describe the commit (e.g., Update navigation links)' : 'Implement new feature or fix'
+                }
                 maxLength={240}
-                hint="Clear, descriptive title for your merge request"
+                hint={
+                  isBranchCommit
+                    ? 'This becomes the commit summary on the existing branch'
+                    : 'Clear, descriptive title for your merge request'
+                }
                 showCharCount
                 error={touchedFields.has('mrTitle') ? fieldErrors.mrTitle || undefined : undefined}
                 success={touchedFields.has('mrTitle') && !fieldErrors.mrTitle && !!form.mrTitle.trim()}
@@ -445,7 +537,7 @@ Example:
                   value={form.codexModel}
                   onChange={(e) => setForm((prev) => ({ ...prev, codexModel: e.target.value }))}
                   options={modelOptions}
-                  placeholder="GPT-4 Turbo (Recommended)"
+                  placeholder="Select a model"
                   disabled={!models.length}
                 />
 
@@ -466,7 +558,7 @@ Example:
                   icon={<Icon type="alert" size={20} />}
                   className="task-submit-callout"
                 >
-                  <p>A GitLab Personal Access Token is required to create merge requests. Configure it in Settings before submitting tasks.</p>
+                  <p>A GitLab Personal Access Token is required to push changes. Configure it in Settings before submitting tasks.</p>
                   <Button
                     variant="primary"
                     size="small"
@@ -483,11 +575,11 @@ Example:
                 <Button
                   type="submit"
                   variant="primary"
-                  size="large"
+                  size="medium"
                   className="task-submit-primary"
                   disabled={submitting || projectsLoading || !projects.length || !patStatus.configured}
                 >
-                  {submitting ? 'Creating Task...' : 'Create Task'}
+                  {submitting ? 'Submitting Task...' : 'Submit Task'}
                 </Button>
               </div>
             </form>
@@ -506,24 +598,26 @@ Example:
             <div className="status-row">
               <div className="status-label">GitLab PAT</div>
               <div className="status-actions">
-                <StatusBadge status={patStatus.configured ? 'configured' : 'missing'} />
-                {patStatus.configured ? (
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    onClick={() => navigate('/settings')}
-                  >
-                    Verify
-                  </Button>
-                ) : (
-                  <Button
-                    variant="primary"
-                    size="small"
-                    onClick={() => navigate('/settings')}
-                  >
-                    Configure →
-                  </Button>
-                )}
+                <div className="status-actions-group">
+                  <StatusBadge status={patStatus.configured ? 'configured' : 'missing'} />
+                  {patStatus.configured ? (
+                    <Button
+                      variant="secondary"
+                      size="small"
+                      onClick={() => navigate('/settings')}
+                    >
+                      Verify
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="primary"
+                      size="small"
+                      onClick={() => navigate('/settings')}
+                    >
+                      Configure →
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -546,7 +640,7 @@ Example:
                   <>
                     <span className="status-value">{selectedProject.name}</span>
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="small"
                       onClick={() => navigate('/projects')}
                     >
@@ -568,18 +662,16 @@ Example:
             {/* Compact Quick Links Row */}
             <div className="quick-actions-compact">
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="small"
                 onClick={() => navigate('/tasks')}
-                icon={<Icon type="clipboard" size={16} />}
               >
                 Tasks
               </Button>
               <Button
-                variant="ghost"
+                variant="secondary"
                 size="small"
                 onClick={() => navigate('/help')}
-                icon={<Icon type="help" size={16} />}
               >
                 Help
               </Button>
@@ -625,6 +717,12 @@ Example:
                           <span className="recent-task-time">
                             {formatTimestamp(task.created_at)}
                           </span>
+                          <span className={`recent-task-mode recent-task-mode-${task.change_mode}`}>
+                            {task.change_mode === 'branch_commit' ? 'Branch commit' : 'Merge request'}
+                          </span>
+                          <span className="recent-task-branch">
+                            {task.branch ?? 'Auto branch'}
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -645,7 +743,7 @@ Example:
           )}
 
           {successMessage && createdTaskId && (
-            <Card className="task-success-card notice notice-success">
+            <Card className="task-success-card alert alert-success">
               <div className="success-message">
                 <div className="success-icon"><Icon type="check" size={24} /></div>
                 <div className="success-content">

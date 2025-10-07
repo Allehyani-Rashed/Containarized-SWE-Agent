@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useRef, useState } from 'react';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 import {
   clearPat,
   clearSession,
@@ -6,34 +6,32 @@ import {
   storePat,
   verifyPat,
 } from '../api/integrations';
+import { getConcurrencySettings, updateConcurrencySettings } from '../api/settings';
 import { formatTimestamp } from '../utils/time';
+import { ConcurrencySettings } from '../types';
 import { usePatStatus } from '../hooks/usePatStatus';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { TextInput, TextArea } from '../components/Input';
-import InfoPanel, { InfoItem, InfoList } from '../components/InfoPanel';
+import { InfoItem, InfoList } from '../components/InfoPanel';
 import StatusBadge from '../components/StatusBadge';
 import Icon from '../components/Icon';
 import './SettingsPage.css';
 
 type PatFormState = {
   token: string;
-  actor: string;
 };
 
 type SessionFormState = {
   bundle: string;
-  actor: string;
 };
 
 const initialPatForm: PatFormState = {
   token: '',
-  actor: '',
 };
 
 const initialSessionForm: SessionFormState = {
   bundle: '',
-  actor: '',
 };
 
 function SettingsPage() {
@@ -51,22 +49,23 @@ function SettingsPage() {
   const [verifySubmitting, setVerifySubmitting] = useState(false);
   const [clearModalOpen, setClearModalOpen] = useState(false);
   const [clearSubmitting, setClearSubmitting] = useState(false);
-  const [clearActor, setClearActor] = useState('');
 
   const [sessionForm, setSessionForm] = useState(initialSessionForm);
   const [sessionMessage, setSessionMessage] = useState<string | null>(null);
   const [sessionSubmitting, setSessionSubmitting] = useState(false);
   const [sessionFileName, setSessionFileName] = useState<string | null>(null);
   const [sessionClearSubmitting, setSessionClearSubmitting] = useState(false);
-  const [sessionClearActor, setSessionClearActor] = useState('');
   const [sessionClearModalOpen, setSessionClearModalOpen] = useState(false);
+
+  const [concurrencySettings, setConcurrencySettings] = useState<ConcurrencySettings | null>(null);
+  const [concurrencyForm, setConcurrencyForm] = useState({ projectLimit: '' });
+  const [concurrencyMessage, setConcurrencyMessage] = useState<string | null>(null);
+  const [concurrencyError, setConcurrencyError] = useState<string | null>(null);
+  const [concurrencyLoading, setConcurrencyLoading] = useState(false);
+  const [concurrencySubmitting, setConcurrencySubmitting] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const sessionFileRequestIdRef = useRef(0);
-
-  // Accordion state - GitLab PAT expanded by default, Session collapsed
-  const [patExpanded, setPatExpanded] = useState(true);
-  const [sessionExpanded, setSessionExpanded] = useState(false);
 
   const combinedError = error ?? patStatusError;
 
@@ -76,6 +75,78 @@ function SettingsPage() {
     patStatus.verification_status === 'verified';
 
   const needsSetup = !patStatus.configured || !patStatus.session_configured;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadConcurrency = async () => {
+      setConcurrencyLoading(true);
+      setConcurrencyError(null);
+      try {
+        const data = await getConcurrencySettings();
+        if (!cancelled) {
+          setConcurrencySettings(data);
+          setConcurrencyForm((prev) => ({
+            ...prev,
+            projectLimit: String(data.project_limit),
+          }));
+        }
+      } catch (apiError) {
+        if (!cancelled) {
+          const message = apiError instanceof Error ? apiError.message : 'Failed to load concurrency settings';
+          setConcurrencyError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setConcurrencyLoading(false);
+        }
+      }
+    };
+
+    void loadConcurrency();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  const handleConcurrencyInputChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    setConcurrencyForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleConcurrencySubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setConcurrencyError(null);
+    setConcurrencyMessage(null);
+
+    const limitValue = concurrencyForm.projectLimit.trim();
+    if (!limitValue) {
+      setConcurrencyError('Project limit is required');
+      return;
+    }
+
+    const parsedLimit = Number(limitValue);
+    if (!Number.isInteger(parsedLimit) || parsedLimit < 1) {
+      setConcurrencyError('Project limit must be a positive integer');
+      return;
+    }
+
+    setConcurrencySubmitting(true);
+    try {
+      const payload = { project_limit: parsedLimit };
+      const updated = await updateConcurrencySettings(payload);
+      setConcurrencySettings(updated);
+      setConcurrencyForm({ projectLimit: String(updated.project_limit) });
+      setConcurrencyMessage('Concurrency limit updated successfully.');
+    } catch (apiError) {
+      const message = apiError instanceof Error ? apiError.message : 'Failed to update concurrency settings';
+      setConcurrencyError(message);
+    } finally {
+      setConcurrencySubmitting(false);
+    }
+  };
 
 
   const handlePatStore = async (event: FormEvent<HTMLFormElement>) => {
@@ -94,7 +165,6 @@ function SettingsPage() {
     try {
       const payload = {
         token: patForm.token.trim(),
-        updated_by: patForm.actor.trim() ? patForm.actor.trim() : null,
       };
       const data = await storePat(payload);
       updateStatus(data);
@@ -116,11 +186,9 @@ function SettingsPage() {
     setVerifyMessage(null);
     setVerifyResult(null);
     try {
-      const payload = clearActor.trim() ? { updated_by: clearActor.trim() } : {};
-      const data = await clearPat(payload);
+      const data = await clearPat({});
       updateStatus(data);
       setPatMessage('Personal access token cleared. Tasks will fail until a new token is configured.');
-      setClearActor('');
       setClearModalOpen(false);
       setPatForm(initialPatForm);
     } catch (apiError) {
@@ -177,10 +245,9 @@ function SettingsPage() {
     setPatMessage(null);
     setError(null);
     clearPatStatusError();
-    try {
+  try {
       const payload = {
         bundle: sessionForm.bundle,
-        updated_by: sessionForm.actor.trim() ? sessionForm.actor.trim() : null,
       };
       const data = await importSession(payload);
       updateStatus(data);
@@ -235,13 +302,11 @@ function SettingsPage() {
     setError(null);
     clearPatStatusError();
     try {
-      const payload = sessionClearActor.trim() ? { updated_by: sessionClearActor.trim() } : {};
-      const data = await clearSession(payload);
+      const data = await clearSession({});
       updateStatus(data);
       setSessionMessage('ChatGPT session bundle cleared. Import a fresh bundle to continue.');
       setSessionForm(initialSessionForm);
       setSessionFileName(null);
-      setSessionClearActor('');
       setSessionClearModalOpen(false);
     } catch (apiError) {
       setError(apiError instanceof Error ? apiError.message : 'Failed to clear the ChatGPT session bundle');
@@ -251,344 +316,271 @@ function SettingsPage() {
   };
 
   return (
-    <div className="page">
-      {/* Quick Setup Banner - shown when credentials are missing */}
+    <div className="layout-page">
+
+      {/* Page-Level Banners */}
       {needsSetup && (
-        <InfoPanel
-          title="Quick Setup Required"
-          variant="info"
-          icon={<Icon type="alert" size={20} />}
-          iconColor="blue"
-        >
-          <p>
-            {!patStatus.configured && !patStatus.session_configured
-              ? 'Configure both GitLab PAT and ChatGPT Session Bundle to get started'
-              : !patStatus.configured
-              ? 'GitLab PAT is required to submit tasks and create merge requests'
-              : 'ChatGPT Session Bundle is required for Docker-backed agent runs'}
-          </p>
-        </InfoPanel>
+        <div className="info-banner info-banner-info">
+          <Icon type="alert" size={20} />
+          <div>
+            <strong>Quick Setup Required</strong>
+            <p>
+              {!patStatus.configured && !patStatus.session_configured
+                ? 'Configure both GitLab PAT and ChatGPT Session Bundle to get started'
+                : !patStatus.configured
+                ? 'GitLab PAT is required to submit tasks and create merge requests'
+                : 'ChatGPT Session Bundle is required for Docker-backed agent runs'}
+            </p>
+          </div>
+        </div>
       )}
 
-      {/* Success Banner - shown when all credentials are verified */}
       {allCredentialsVerified && (
-        <InfoPanel
-          title="All Credentials Verified"
-          variant="success"
-          icon={
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                clipRule="evenodd"
-              />
-            </svg>
-          }
-          iconColor="green"
-        >
-          <p>Your GitLab PAT and ChatGPT session are properly configured and verified</p>
-        </InfoPanel>
+        <div className="success-banner">
+          <Icon type="check-circle" size={20} />
+          <div>
+            <strong>All Credentials Verified</strong>
+            <p>Your GitLab PAT and ChatGPT session are properly configured and verified</p>
+          </div>
+        </div>
       )}
 
-      {/* Error Banner */}
-      {combinedError && (
-        <InfoPanel title="Error" variant="error" iconColor="red">
-          <p>{combinedError}</p>
-        </InfoPanel>
-      )}
-
-      {/* Success Messages */}
-      {patMessage && (
-        <InfoPanel title="Success" variant="success" iconColor="green">
-          <p>{patMessage}</p>
-        </InfoPanel>
-      )}
-      {sessionMessage && (
-        <InfoPanel title="Success" variant="success" iconColor="green">
-          <p>{sessionMessage}</p>
-        </InfoPanel>
-      )}
+      {combinedError && <div className="error-banner">{combinedError}</div>}
+      {patMessage && <div className="alert alert-success">{patMessage}</div>}
+      {sessionMessage && <div className="alert alert-success">{sessionMessage}</div>}
       {verifyMessage && (
-        <InfoPanel
-          title={verifyResult === 'success' ? 'Verification Successful' : 'Verification Failed'}
-          variant={verifyResult === 'success' ? 'success' : 'warning'}
-          iconColor={verifyResult === 'success' ? 'green' : 'orange'}
-          className={`notice ${verifyResult === 'success' ? 'notice-success' : 'notice-warning'}`}
-        >
-          <p>{verifyMessage}</p>
-        </InfoPanel>
+        <div className={`alert ${verifyResult === 'success' ? 'alert-success' : 'alert-warning'}`}>
+          {verifyMessage}
+        </div>
       )}
 
-      <div className="settings-layout">
-        {/* Main Content Area */}
-        <main className="settings-main">
-          {/* GitLab Personal Access Token Card */}
-          <section className="accordion-section">
-            <Card>
-              {/* Accordion Header - Always Visible */}
-              <button
-                type="button"
-                className="accordion-header"
-                onClick={() => setPatExpanded(!patExpanded)}
-                aria-expanded={patExpanded}
-                aria-controls="gitlab-pat-section"
+      {/* Settings Layout - 3-Column Grid */}
+      <div className="settings-grid-3col">
+        {/* GitLab Personal Access Token Card */}
+        <Card>
+          <div className="credential-card-header">
+            <h3>GitLab Personal Access Token</h3>
+            <StatusBadge
+              status={patStatus.configured ? 'configured' : 'missing'}
+              size="small"
+            />
+          </div>
+
+          <InfoList columns={1}>
+            <InfoItem label="Last Update" value={formatTimestamp(patStatus.updated_at)} />
+            <InfoItem
+              label="Verification"
+              value={
+                <StatusBadge
+                  status={
+                    patStatus.verification_status === 'verified'
+                      ? 'verified'
+                      : patStatus.verification_status === 'error'
+                      ? 'error'
+                      : 'pending'
+                  }
+                  label={
+                    patStatus.verification_status === 'verified'
+                      ? 'Verified'
+                      : patStatus.verification_status === 'error'
+                      ? 'Failed'
+                      : 'Not run'
+                  }
+                  size="small"
+                />
+              }
+            />
+            <InfoItem label="Host" value={patStatus.verification_host || '--'} />
+          </InfoList>
+
+          <form className="credential-form" onSubmit={handlePatStore}>
+            <TextInput
+              label="Personal Access Token"
+              type="password"
+              value={patForm.token}
+              onChange={(e) => setPatForm({ ...patForm, token: e.target.value })}
+              placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
+              hint="Required scopes: api, read_user, read_repository"
+              required
+            />
+            <div className="button-group">
+              <Button
+                variant="primary"
+                type="submit"
+                size="medium"
+                disabled={patSubmitting}
               >
-                <div className="accordion-header-content">
-                  <div className="accordion-icon credential-card-icon-orange">
-                    <Icon type="key" size={24} />
-                  </div>
-                  <div className="accordion-title-section">
-                    <h3>GitLab Personal Access Token</h3>
-                    <div className="accordion-summary">
-                      <StatusBadge
-                        status={patStatus.configured ? 'configured' : 'missing'}
-                        size="small"
-                      />
-                      <span className="accordion-summary-text">
-                        {patStatus.updated_at ? `Updated ${formatTimestamp(patStatus.updated_at)}` : 'Not configured'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className={`accordion-chevron ${patExpanded ? 'expanded' : ''}`}>
-                  <Icon type="chevron-down" size={20} />
-                </div>
-              </button>
-
-              {/* Accordion Content - Collapsible */}
-              <div id="gitlab-pat-section" className={`accordion-content ${patExpanded ? 'expanded' : ''}`}>
-                <div className="accordion-content-inner">
-                  <InfoList columns={2}>
-                    <InfoItem
-                      label="Status"
-                      value={
-                        <StatusBadge status={patStatus.configured ? 'configured' : 'missing'} size="small" />
-                      }
-                    />
-                    <InfoItem label="Last Update" value={formatTimestamp(patStatus.updated_at)} />
-                    <InfoItem label="Updated By" value={patStatus.updated_by || '--'} />
-                    <InfoItem
-                      label="Verification"
-                      value={
-                        <StatusBadge
-                          status={
-                            patStatus.verification_status === 'verified'
-                              ? 'verified'
-                              : patStatus.verification_status === 'error'
-                              ? 'error'
-                              : 'pending'
-                          }
-                          label={
-                            patStatus.verification_status === 'verified'
-                              ? 'Verified'
-                              : patStatus.verification_status === 'error'
-                              ? 'Failed'
-                              : 'Not run'
-                          }
-                          size="small"
-                        />
-                      }
-                    />
-                    <InfoItem label="Host" value={patStatus.verification_host || '--'} />
-                  </InfoList>
-
-                  <form className="credential-form" onSubmit={handlePatStore}>
-              <TextInput
-                label="Personal Access Token"
-                type="password"
-                value={patForm.token}
-                onChange={(e) => setPatForm({ ...patForm, token: e.target.value })}
-                placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
-                hint="Required scopes: api, read_user, read_repository"
-                required
-              />
-              <TextInput
-                label="Actor (Optional)"
-                type="text"
-                value={patForm.actor}
-                onChange={(e) => setPatForm({ ...patForm, actor: e.target.value })}
-                placeholder="operator"
-              />
-
-              <div className="button-group">
-                <Button variant="primary" type="submit" disabled={patSubmitting} icon={<Icon type="key" size={20} />}>
-                  {patSubmitting ? 'Storing...' : 'Store Token'}
-                </Button>
-                <Button
-                  variant="secondary"
-                  type="button"
-                  onClick={handlePatVerify}
-                  disabled={verifySubmitting || !patStatus.configured}
-                  icon={<Icon type="check" size={20} />}
-                >
-                  {verifySubmitting ? 'Verifying...' : 'Verify PAT Access'}
-                </Button>
-                <Button
-                  variant="danger"
-                  type="button"
-                  onClick={() => {
-                    setPatMessage(null);
-                    setSessionMessage(null);
-                    setError(null);
-                    setClearModalOpen(true);
-                  }}
-                  disabled={clearSubmitting || !patStatus.configured}
-                  icon={<Icon type="trash" size={20} />}
-                >
-                  Clear PAT
-                </Button>
-              </div>
-            </form>
-
-                  <InfoPanel title="Credential handling" variant="info" iconColor="blue">
-                    <p>
-                      GitLab PATs are loaded from your local <code>.env</code> file and stored in plaintext inside the
-                      orchestrator process. Clearing the PAT removes it from memory, so new task submissions will fail
-                      until you provide a replacement token.
-                    </p>
-                  </InfoPanel>
-
-                  {patStatus.verification_status === 'error' && patStatus.verification_error && (
-                    <InfoPanel title="Verification Failed" variant="warning" iconColor="orange" icon={<Icon type="alert" size={20} />}>
-                      <p>Clearing the PAT will prevent new task submissions until reconfigured</p>
-                      <p className="error-detail">{patStatus.verification_error}</p>
-                    </InfoPanel>
-                  )}
-                </div>
-              </div>
-            </Card>
-          </section>
-
-          {/* ChatGPT Session Bundle Card */}
-          <section className="accordion-section">
-            <Card>
-              {/* Accordion Header - Always Visible */}
-              <button
+                {patSubmitting ? 'Storing...' : 'Store Token'}
+              </Button>
+              <Button
+                variant="success"
                 type="button"
-                className="accordion-header"
-                onClick={() => setSessionExpanded(!sessionExpanded)}
-                aria-expanded={sessionExpanded}
-                aria-controls="chatgpt-session-section"
+                onClick={handlePatVerify}
+                disabled={verifySubmitting || !patStatus.configured}
               >
-                <div className="accordion-header-content">
-                  <div className="accordion-icon credential-card-icon-green">
-                    <Icon type="robot" size={24} />
-                  </div>
-                  <div className="accordion-title-section">
-                    <h3>ChatGPT Session Bundle</h3>
-                    <div className="accordion-summary">
-                      <StatusBadge
-                        status={patStatus.session_configured ? 'active' : 'missing'}
-                        size="small"
-                      />
-                      <span className="accordion-summary-text">
-                        {patStatus.session_updated_at ? `Updated ${formatTimestamp(patStatus.session_updated_at)}` : 'Not configured'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className={`accordion-chevron ${sessionExpanded ? 'expanded' : ''}`}>
-                  <Icon type="chevron-down" size={20} />
-                </div>
-              </button>
+                {verifySubmitting ? 'Verifying...' : 'Verify'}
+              </Button>
+            </div>
+          </form>
 
-              {/* Accordion Content - Collapsible */}
-              <div id="chatgpt-session-section" className={`accordion-content ${sessionExpanded ? 'expanded' : ''}`}>
-                <div className="accordion-content-inner">
-                  <InfoList columns={2}>
-                    <InfoItem
-                      label="Status"
-                      value={
-                        <StatusBadge
-                          status={patStatus.session_configured ? 'active' : 'missing'}
-                          size="small"
-                        />
-                      }
-                    />
-                    <InfoItem label="Updated By" value={patStatus.session_updated_by || '--'} />
-                    <InfoItem label="Bundle Type" value="Session Bundle" />
-                    <InfoItem label="Last Refresh" value={formatTimestamp(patStatus.session_updated_at)} />
-                  </InfoList>
+          {patStatus.configured && (
+            <div className="danger-zone">
+              <Button
+                variant="danger"
+                type="button"
+                onClick={() => {
+                  setPatMessage(null);
+                  setSessionMessage(null);
+                  setError(null);
+                  setClearModalOpen(true);
+                }}
+                disabled={clearSubmitting}
+              >
+                Clear PAT
+              </Button>
+            </div>
+          )}
 
-                  <form className="credential-form" onSubmit={handleSessionImport}>
-              <TextArea
-                label="Session Bundle JSON"
-                value={sessionForm.bundle}
-                onChange={(e) => setSessionForm({ ...sessionForm, bundle: e.target.value })}
-                placeholder='{"session_token": "...", "user_agent": "...", "cf_clearance": "..."}'
-                rows={6}
-                required
-              />
+          {patStatus.verification_status === 'error' && patStatus.verification_error && (
+            <div className="credential-warning">
+              <Icon type="alert" size={16} />
+              <span>{patStatus.verification_error}</span>
+            </div>
+          )}
+        </Card>
 
-              <div className="file-upload-group">
-                <label className="file-upload-label">
-                  <span>Upload Bundle File</span>
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    onChange={handleSessionFile}
-                    className="file-upload-input"
-                  />
-                  <span className="file-upload-button">Choose File</span>
-                  <span className="file-upload-name">
-                    {sessionFileName || 'No file chosen'}
-                  </span>
-                </label>
-                {sessionFileName && <p className="file-hint">session_bundle.json</p>}
-              </div>
+        {/* ChatGPT Session Bundle Card */}
+        <Card>
+          <div className="credential-card-header">
+            <h3>ChatGPT Session Bundle</h3>
+            <StatusBadge
+              status={patStatus.session_configured ? 'active' : 'missing'}
+              size="small"
+            />
+          </div>
 
-              <TextInput
-                label="Actor (Optional)"
-                type="text"
-                value={sessionForm.actor}
-                onChange={(e) => setSessionForm({ ...sessionForm, actor: e.target.value })}
-                placeholder="operator"
-              />
+          <InfoList columns={1}>
+            <InfoItem label="Last Refresh" value={formatTimestamp(patStatus.session_updated_at)} />
+          </InfoList>
 
-              <div className="button-group">
-                <Button variant="success" type="submit" disabled={sessionSubmitting} icon={<Icon type="robot" size={20} />}>
-                  {sessionSubmitting ? 'Importing...' : 'Import Session'}
-                </Button>
-              </div>
-            </form>
+          <form className="credential-form" onSubmit={handleSessionImport}>
+            <TextArea
+              label="Session Bundle JSON"
+              value={sessionForm.bundle}
+              onChange={(e) => setSessionForm({ ...sessionForm, bundle: e.target.value })}
+              placeholder='{"session_token": "...", "user_agent": "...", "cf_clearance": "..."}'
+              rows={4}
+              required
+            />
 
-            <div className="cli-commands">
-              <h4>CLI Commands</h4>
-              <pre>
-                <code># macOS:{'\n'}pbpaste | jq . &gt; session_bundle.json</code>
-              </pre>
-              <pre>
-                <code># Linux:{'\n'}xclip -o | jq . &gt; session_bundle.json</code>
-              </pre>
-              <pre>
-                <code># Windows:{'\n'}Get-Clipboard | ConvertFrom-Json &gt; session_bundle.json</code>
-              </pre>
+            <div className="file-upload-group">
+              <label className="file-upload-label">
+                <span>Upload Bundle File</span>
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleSessionFile}
+                  className="file-upload-input"
+                />
+                <span className="file-upload-button">Choose File</span>
+                <span className="file-upload-name">
+                  {sessionFileName || 'No file chosen'}
+                </span>
+              </label>
+              {sessionFileName && <p className="file-hint">session_bundle.json</p>}
             </div>
 
-                  <div>
-                  <Button
-                    variant="danger"
-                    type="button"
-                    onClick={() => {
-                      setSessionMessage(null);
-                      setError(null);
-                      setSessionClearModalOpen(true);
-                    }}
-                    disabled={sessionClearSubmitting || !patStatus.session_configured}
-                    icon={<Icon type="trash" size={20} />}
-                  >
-                    Clear Session Bundle
-                  </Button>
+            <div className="button-group">
+              <Button
+                variant="primary"
+                type="submit"
+                size="medium"
+                disabled={sessionSubmitting}
+              >
+                {sessionSubmitting ? 'Importing...' : 'Import Session'}
+              </Button>
+            </div>
+          </form>
 
-                  <InfoPanel title="Warning" variant="warning" iconColor="orange" icon={<Icon type="alert" size={20} />}>
-                    <p>Clearing will affect Docker-backed task runs</p>
-                  </InfoPanel>
-                  </div>
-                </div>
+          {patStatus.session_configured && (
+            <div className="danger-zone">
+              <Button
+                variant="danger"
+                type="button"
+                onClick={() => {
+                  setSessionMessage(null);
+                  setError(null);
+                  setSessionClearModalOpen(true);
+                }}
+                disabled={sessionClearSubmitting}
+              >
+                Clear Session
+              </Button>
+            </div>
+          )}
+
+          <div className="cli-hint">
+            <h4>CLI Commands</h4>
+            <p className="card-subtitle">macOS:</p>
+            <code>pbpaste | jq . {'>'} session_bundle.json</code>
+            <p className="card-subtitle">Linux:</p>
+            <code>xclip -o -selection clipboard | jq . {'>'} session_bundle.json</code>
+          </div>
+        </Card>
+
+        {/* Global Concurrency Card */}
+        <Card className="concurrency-card">
+            <h2>Global Concurrency</h2>
+            <p className="card-subtitle">Set the per-project concurrency cap enforced by the worker.</p>
+            {concurrencyError && <div className="error-banner">{concurrencyError}</div>}
+            {concurrencyMessage && <div className="alert alert-success">{concurrencyMessage}</div>}
+            <form className="concurrency-form" onSubmit={handleConcurrencySubmit}>
+              <div className="concurrency-grid">
+                <TextInput
+                  label="Project Concurrency Limit"
+                  type="number"
+                  min={1}
+                  name="projectLimit"
+                  value={concurrencyForm.projectLimit}
+                  onChange={handleConcurrencyInputChange}
+                  disabled={concurrencyLoading || concurrencySubmitting}
+                  required
+                />
               </div>
-            </Card>
-          </section>
-        </main>
+              <Button
+                type="submit"
+                variant="primary"
+                size="medium"
+                disabled={concurrencySubmitting || concurrencyLoading}
+              >
+                {concurrencySubmitting ? 'Updating…' : 'Update Limit'}
+              </Button>
+            </form>
+            <div className="concurrency-stats">
+              {concurrencyLoading ? (
+                <p>Loading concurrency settings…</p>
+              ) : concurrencySettings ? (
+                <InfoList columns={1}>
+                  <InfoItem label="Configured Limit" value={concurrencySettings.project_limit} />
+                  <InfoItem
+                    label="Effective Runtime Limit"
+                    value={concurrencySettings.effective_project_limit}
+                  />
+                  <InfoItem
+                    label="Worker Pool Size"
+                    value={concurrencySettings.worker_pool_size}
+                  />
+                  <InfoItem
+                    label="Parallel Execution"
+                    value={concurrencySettings.parallel_enabled ? 'Enabled' : 'Disabled'}
+                  />
+                  <InfoItem label="Last Updated" value={formatTimestamp(concurrencySettings.updated_at)} />
+                </InfoList>
+              ) : (
+                <p>Concurrency settings unavailable.</p>
+              )}
+            </div>
+          </Card>
       </div>
 
       {/* Clear PAT Modal */}
@@ -601,22 +593,12 @@ function SettingsPage() {
               until a replacement token is configured. Running tasks continue with the credentials they
               already captured.
             </p>
-            <label>
-              Cleared By (optional)
-              <input
-                type="text"
-                value={clearActor}
-                onChange={(event) => setClearActor(event.target.value)}
-                placeholder="operator name"
-              />
-            </label>
             <div className="modal-actions">
               <button
                 type="button"
                 className="ghost-button"
                 onClick={() => {
                   setClearModalOpen(false);
-                  setClearActor('');
                 }}
                 disabled={clearSubmitting}
               >
@@ -646,22 +628,12 @@ function SettingsPage() {
               Clearing the session bundle disables Docker-backed Codex runs until you import a replacement.
               Stub-only runs (set RUNNER_DISABLE_DOCKER=1) continue to work without a session bundle.
             </p>
-            <label>
-              Cleared By (optional)
-              <input
-                type="text"
-                value={sessionClearActor}
-                onChange={(event) => setSessionClearActor(event.target.value)}
-                placeholder="operator name"
-              />
-            </label>
             <div className="modal-actions">
               <button
                 type="button"
                 className="ghost-button"
                 onClick={() => {
                   setSessionClearModalOpen(false);
-                  setSessionClearActor('');
                 }}
                 disabled={sessionClearSubmitting}
               >
