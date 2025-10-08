@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import CredentialBanner from './taskList/components/CredentialBanner';
 import ConcurrencyBanner from './taskList/components/ConcurrencyBanner';
 import TaskFilterToolbar from './taskList/components/TaskFilterToolbar';
@@ -137,90 +138,92 @@ function TaskListPage() {
   };
 
   return (
-    <div className="layout-page">
-      {combinedError && (
-        <div className="error-banner" role="alert">
-          {combinedError}
-        </div>
-      )}
+    <ErrorBoundary>
+      <div className="layout-page">
+        {combinedError && (
+          <div className="error-banner" role="alert">
+            {combinedError}
+          </div>
+        )}
 
-      <CredentialBanner />
-      <ConcurrencyBanner projects={projects} />
+        <CredentialBanner />
+        <ConcurrencyBanner projects={projects} />
 
-      <TaskFilterToolbar
-        filterDraft={filterDraft}
-        filtersApplied={filtersApplied}
-        filterDraftMatchesApplied={filterDraftMatchesApplied}
-        models={models}
-        statusOptions={TASK_STATUS_OPTIONS}
-        onStatusToggle={toggleStatusFilter}
-        onModelChange={updateModelDraft}
-        onBranchChange={updateBranchDraft}
-        onSubmit={(event) => submitFilters(event)}
-        onReset={resetFilters}
-      />
+        <TaskFilterToolbar
+          filterDraft={filterDraft}
+          filtersApplied={filtersApplied}
+          filterDraftMatchesApplied={filterDraftMatchesApplied}
+          models={models}
+          statusOptions={TASK_STATUS_OPTIONS}
+          onStatusToggle={toggleStatusFilter}
+          onModelChange={updateModelDraft}
+          onBranchChange={updateBranchDraft}
+          onSubmit={(event) => submitFilters(event)}
+          onReset={resetFilters}
+        />
 
-      <TaskTable
-        tasks={tasks}
-        models={models}
-        projectLookup={projectLookup}
-        isLoading={isLoading}
-        isLoadingMore={isLoadingMore}
-        listMeta={listMeta}
-        filtersApplied={filtersApplied}
-        canLoadMore={canLoadMore}
-        reachedPageLimit={reachedPageLimit}
-        selectedTaskId={selectedTaskId}
-        quickActionLoading={quickActionLoading}
-        onSelectTask={selectTask}
-        onLoadMore={loadMore}
-        onResetFilters={resetFilters}
-        onSubmitTask={handleSubmitTaskNavigation}
-        onQuickAbortRequest={requestQuickAbort}
-        onQuickRetry={(task) => navigateToSubmit(task, 'retry')}
-        onQuickClone={(task) => navigateToSubmit(task, 'clone')}
-      />
+        <TaskTable
+          tasks={tasks}
+          models={models}
+          projectLookup={projectLookup}
+          isLoading={isLoading}
+          isLoadingMore={isLoadingMore}
+          listMeta={listMeta}
+          filtersApplied={filtersApplied}
+          canLoadMore={canLoadMore}
+          reachedPageLimit={reachedPageLimit}
+          selectedTaskId={selectedTaskId}
+          quickActionLoading={quickActionLoading}
+          onSelectTask={selectTask}
+          onLoadMore={loadMore}
+          onResetFilters={resetFilters}
+          onSubmitTask={handleSubmitTaskNavigation}
+          onQuickAbortRequest={requestQuickAbort}
+          onQuickRetry={(task) => navigateToSubmit(task, 'retry')}
+          onQuickClone={(task) => navigateToSubmit(task, 'clone')}
+        />
 
-      <TaskLookupPanel
-        taskLookupId={taskLookupId}
-        onLookupChange={handleLookupChange}
-        onLookupSubmit={handleLookupSubmit}
-        taskDetail={taskDetail}
-        isDrawerOpen={isDrawerOpen}
-        onOpenDrawer={openDrawer}
-      />
+        <TaskLookupPanel
+          taskLookupId={taskLookupId}
+          onLookupChange={handleLookupChange}
+          onLookupSubmit={handleLookupSubmit}
+          taskDetail={taskDetail}
+          isDrawerOpen={isDrawerOpen}
+          onOpenDrawer={openDrawer}
+        />
 
-      <TaskDetailDrawer
-        isOpen={isDrawerOpen}
-        task={taskDetail}
-        projectName={selectedProjectName}
-        abortPending={abortPending}
-        canAbort={canAbortTask}
-        canDelete={canDeleteTask}
-        isActionLoading={isActionLoading}
-        actionNotice={actionNotice}
-        actionError={actionError}
-        confirmAction={confirmAction}
-        onRequestAbort={requestAbortTask}
-        onRequestDelete={requestDeleteTask}
-        onCancelAction={cancelConfirmation}
-        onConfirmAction={executeConfirmation}
-        onClose={closeDrawer}
-        logs={logState.logs}
-        logMetadata={logState.metadata}
-        isStreaming={logState.isStreaming}
-        copyState={logState.copyState}
-        onCopyLogs={logState.copyLogs}
-        onResetCopyFeedback={logState.resetCopyFeedback}
-      />
+        <TaskDetailDrawer
+          isOpen={isDrawerOpen}
+          task={taskDetail}
+          projectName={selectedProjectName}
+          abortPending={abortPending}
+          canAbort={canAbortTask}
+          canDelete={canDeleteTask}
+          isActionLoading={isActionLoading}
+          actionNotice={actionNotice}
+          actionError={actionError}
+          confirmAction={confirmAction}
+          onRequestAbort={requestAbortTask}
+          onRequestDelete={requestDeleteTask}
+          onCancelAction={cancelConfirmation}
+          onConfirmAction={executeConfirmation}
+          onClose={closeDrawer}
+          logs={logState.logs}
+          logMetadata={logState.metadata}
+          isStreaming={logState.isStreaming}
+          copyState={logState.copyState}
+          onCopyLogs={logState.copyLogs}
+          onResetCopyFeedback={logState.resetCopyFeedback}
+        />
 
-      <QuickAbortModal
-        taskId={confirmQuickAbort}
-        isLoading={confirmQuickAbort !== null && quickActionLoading === confirmQuickAbort}
-        onConfirm={performQuickAbort}
-        onCancel={clearQuickAbort}
-      />
-    </div>
+        <QuickAbortModal
+          taskId={confirmQuickAbort}
+          isLoading={confirmQuickAbort !== null && quickActionLoading === confirmQuickAbort}
+          onConfirm={performQuickAbort}
+          onCancel={clearQuickAbort}
+        />
+      </div>
+    </ErrorBoundary>
   );
 }
 

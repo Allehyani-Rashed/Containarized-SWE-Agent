@@ -58,6 +58,7 @@ function TaskTable({
   const renderSkeleton = () => (
     <div className="table-responsive">
       <table className="task-table task-table-skeleton" aria-hidden="true">
+        <caption className="sr-only">Loading task list</caption>
         <thead>
           <tr>
             <th>ID</th>
@@ -107,10 +108,18 @@ function TaskTable({
       />
     );
 
+  const getCaptionText = () => {
+    if (filtersApplied) {
+      return `Task list (filtered, showing ${tasks.length} of ${listMeta.total} tasks)`;
+    }
+    return `Task list (showing ${listMeta.total} tasks)`;
+  };
+
   const renderTableBody = () => (
     <>
       <div className="table-responsive">
         <table className="task-table">
+          <caption className="sr-only">{getCaptionText()}</caption>
           <thead>
             <tr>
               <th className="sticky-column">ID</th>

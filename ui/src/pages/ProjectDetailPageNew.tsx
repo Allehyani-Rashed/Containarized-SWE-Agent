@@ -5,6 +5,7 @@ import { useProjects } from '../hooks/useProjectsData';
 import { usePatStatus } from '../hooks/usePatStatus';
 import { ProjectAllowlistStatus, ProjectDetail, ProjectTaskSummary } from '../types';
 import { formatTimestamp } from '../utils/time';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Card, Button, StatusBadge, Icon } from '../components';
 import './ProjectDetailPageNew.css';
 
@@ -96,8 +97,9 @@ function ProjectDetailPageNew() {
   }, [detail]);
 
   return (
-    <div className="layout-page project-detail-page-new">
-      <div className="project-detail-hero">
+    <ErrorBoundary>
+      <div className="layout-page project-detail-page-new">
+        <div className="project-detail-hero">
         <button type="button" className="back-button" onClick={() => navigate('/projects')}>
           <Icon type="chevron-left" />
           <span>Back to Projects</span>
@@ -396,7 +398,8 @@ function ProjectDetailPageNew() {
           </Card>
         </div>
       ) : null}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

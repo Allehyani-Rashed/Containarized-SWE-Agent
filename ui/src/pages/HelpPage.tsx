@@ -1,4 +1,5 @@
 import { ReactNode } from 'react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import Card from '../components/Card';
 import InfoPanel from '../components/InfoPanel';
 import Icon from '../components/Icon';
@@ -34,9 +35,10 @@ function TroubleshootingItem({ problem, solution }: TroubleshootingItemProps) {
 
 function HelpPage() {
   return (
-    <div className="layout-page">
-      {/* Getting Started Section */}
-      <section className="help-section">
+    <ErrorBoundary>
+      <div className="layout-page">
+        {/* Getting Started Section */}
+        <section className="help-section">
           <Card>
             <div className="section-header">
               <div className="section-icon section-icon-blue"><Icon type="rocket" size={24} /></div>
@@ -568,7 +570,8 @@ function HelpPage() {
             </div>
           </Card>
         </section>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

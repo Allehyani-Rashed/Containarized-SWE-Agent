@@ -1,0 +1,115 @@
+.error-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  padding: var(--space-8);
+}
+
+.error-fallback-content {
+  max-width: 600px;
+  text-align: center;
+}
+
+.error-fallback-icon {
+  color: var(--red-500);
+  margin-bottom: var(--space-6);
+  display: flex;
+  justify-content: center;
+}
+
+.error-fallback-title {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  color: var(--gray-900);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.error-fallback-message {
+  color: var(--gray-600);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  margin: 0 0 var(--space-6) 0;
+}
+
+.error-fallback-details {
+  text-align: left;
+  margin: var(--space-6) 0;
+  padding: var(--space-4);
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+}
+
+.error-fallback-details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--gray-700);
+  padding: var(--space-2);
+}
+
+.error-fallback-details summary:hover {
+  color: var(--gray-900);
+}
+
+.error-fallback-stack {
+  margin: var(--space-4) 0 0 0;
+  padding: var(--space-4);
+  background: var(--gray-900);
+  color: var(--gray-100);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-family: var(--font-mono);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+.error-fallback-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3) var(--space-6);
+  font-size: var(--text-base);
+  font-weight: 500;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.button-primary {
+  background: var(--blue-600);
+  color: white;
+}
+
+.button-primary:hover {
+  background: var(--blue-700);
+}
+
+.button-primary:focus {
+  outline: 2px solid var(--blue-500);
+  outline-offset: 2px;
+}
+
+.button-secondary {
+  background: var(--gray-100);
+  color: var(--gray-900);
+}
+
+.button-secondary:hover {
+  background: var(--gray-200);
+}
+
+.button-secondary:focus {
+  outline: 2px solid var(--gray-400);
+  outline-offset: 2px;
+}

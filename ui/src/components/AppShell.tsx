@@ -112,6 +112,9 @@ function AppShell() {
 
   return (
     <div className="app-shell-new">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <Sidebar />
 
       <div className="app-content">
@@ -130,7 +133,7 @@ function AppShell() {
           </div>
         </header>
 
-        <main className="app-main-content">
+        <main id="main-content" className="app-main-content">
           <Outlet />
         </main>
       </div>

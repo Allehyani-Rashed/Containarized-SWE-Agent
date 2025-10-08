@@ -10,6 +10,7 @@ import { getConcurrencySettings, updateConcurrencySettings } from '../api/settin
 import { formatTimestamp } from '../utils/time';
 import { ConcurrencySettings } from '../types';
 import { usePatStatus } from '../hooks/usePatStatus';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import { TextInput, TextArea } from '../components/Input';
@@ -316,7 +317,8 @@ function SettingsPage() {
   };
 
   return (
-    <div className="layout-page">
+    <ErrorBoundary>
+      <div className="layout-page">
 
       {/* Page-Level Banners */}
       {needsSetup && (
@@ -653,7 +655,8 @@ function SettingsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 

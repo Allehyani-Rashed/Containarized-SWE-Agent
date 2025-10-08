@@ -4,6 +4,7 @@ import {
   useState,
 } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useProjects } from '../hooks/useProjectsData';
 import {
   Project,
@@ -202,150 +203,159 @@ function ProjectsPage() {
   };
 
   return (
-    <div className="layout-page projects-page-new">
-      {combinedError ? (
-        <div className="error-banner">
-          <span>{combinedError}</span>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={handleRetry}
-            disabled={retrying}
-          >
-            {retrying ? 'Retrying…' : 'Retry'}
-          </button>
-        </div>
-      ) : null}
-      {successMessage && <div className="alert alert-success">{successMessage}</div>}
+    <ErrorBoundary>
+      <div className="layout-page projects-page-new">
+        {combinedError ? (
+          <div className="error-banner">
+            <span>{combinedError}</span>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={handleRetry}
+              disabled={retrying}
+            >
+              {retrying ? 'Retrying…' : 'Retry'}
+            </button>
+          </div>
+        ) : null}
+        {successMessage && <div className="alert alert-success">{successMessage}</div>}
 
-      {projects.length > 0 && (
-        <div className="projects-filters">
-          <div className="filter-search-bar">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="search-icon">
-              <path
-                d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM19 19l-4.35-4.35"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
+        {projects.length > 0 && (
+          <div className="projects-filters">
+            <div className="filter-search-bar">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="search-icon">
+                <path
+                  d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16zM19 19l-4.35-4.35"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+              <input
+                type="text"
+                className="filter-search-input"
+                placeholder="Search by name, repository, or host..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
-            </svg>
-            <input
-              type="text"
-              className="filter-search-input"
-              placeholder="Search by name, repository, or host..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-            {searchQuery && (
-              <button className="search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
-                ×
-              </button>
-            )}
-          </div>
-          <div className="filter-dropdowns">
-            <select
-              className="filter-select"
-              value={hostFilter}
-              onChange={(e) => setHostFilter(e.target.value)}
-            >
-              <option value="">All Hosts</option>
-              {uniqueHosts.map((host) => (
-                <option key={host} value={host}>
-                  {host.replace(/^https?:\/\//, '')}
-                </option>
-              ))}
-            </select>
-            <select
-              className="filter-select"
-              value={cacheStatusFilter}
-              onChange={(e) => setCacheStatusFilter(e.target.value)}
-            >
-              <option value="">All Cache Statuses</option>
-              {uniqueCacheStatuses.map((status) => (
-                <option key={status} value={status}>
-                  {status.charAt(0).toUpperCase() + status.slice(1)}
-                </option>
-              ))}
-            </select>
-            {hasActiveFilters && (
-              <button type="button" className="filter-clear-btn" onClick={clearFilters}>
-                Clear Filters
-              </button>
-            )}
-          </div>
-          <div className="filter-results-info">
-            <span>
-              Showing {sortedProjects.length} of {projects.length} project{projects.length !== 1 ? 's' : ''}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="projects-grid">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="project-card-skeleton">
-              <Skeleton variant="text" width="60%" height="24px" />
-              <Skeleton variant="text" width="80%" height="16px" />
-              <Skeleton variant="text" width="100%" height="80px" />
-              <Skeleton variant="text" width="40%" height="16px" />
+              {searchQuery && (
+                <button className="search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+                  ×
+                </button>
+              )}
             </div>
-          ))}
-        </div>
-      ) : projects.length === 0 ? (
-        <EmptyState
-          icon="folder"
-          title="No projects configured"
-          description="Add your first project to start running AI agent tasks. Projects connect your GitLab repositories to the Codex runner."
-        />
-      ) : sortedProjects.length === 0 ? (
-        <EmptyState
-          icon="alert"
-          title="No matching projects"
-          description="No projects match your current search and filter criteria. Try adjusting your filters or clearing them to see all projects."
-          actionLabel="Clear Filters"
-          onAction={clearFilters}
-        />
-      ) : (
-        <div className="projects-grid">
-          {sortedProjects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onView={() => navigate(`/projects/${project.id}`)}
-              onEdit={handleEditSelect}
-              onDelete={handleDelete}
-              onSubmitTask={(proj) => navigate('/', { state: { projectId: proj.id } })}
-              onCopyRefreshCLI={copyRefreshCommand}
-              patConfigured={patStatus.configured}
-              sessionConfigured={patStatus.session_configured}
-            />
-          ))}
-        </div>
-      )}
-
-      {deleteTarget ? (
-        <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Project</h3>
-            <p>
-              Remove <strong>{deleteTarget.name}</strong> from the runner? Completed task logs will remain
-              available, but future runs will no longer reference this project.
-            </p>
-            {deleteError && <div className="error-banner">{deleteError}</div>}
-            <div className="modal-actions">
-              <button type="button" onClick={confirmDelete} disabled={deleteSubmitting} className="btn-danger">
-                {deleteSubmitting ? 'Deleting…' : 'Confirm Deletion'}
-              </button>
-              <button type="button" className="ghost-button" onClick={() => setDeleteTarget(null)}>
-                Cancel
-              </button>
+            <div className="filter-dropdowns">
+              <select
+                className="filter-select"
+                value={hostFilter}
+                onChange={(e) => setHostFilter(e.target.value)}
+              >
+                <option value="">All Hosts</option>
+                {uniqueHosts.map((host) => (
+                  <option key={host} value={host}>
+                    {host.replace(/^https?:\/\//, '')}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="filter-select"
+                value={cacheStatusFilter}
+                onChange={(e) => setCacheStatusFilter(e.target.value)}
+              >
+                <option value="">All Cache Statuses</option>
+                {uniqueCacheStatuses.map((status) => (
+                  <option key={status} value={status}>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </option>
+                ))}
+              </select>
+              {hasActiveFilters && (
+                <button type="button" className="filter-clear-btn" onClick={clearFilters}>
+                  Clear Filters
+                </button>
+              )}
+            </div>
+            <div className="filter-results-info">
+              <span>
+                Showing {sortedProjects.length} of {projects.length} project{projects.length !== 1 ? 's' : ''}
+              </span>
             </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        )}
+
+        {isLoading ? (
+          <div className="projects-grid">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="project-card-skeleton">
+                <Skeleton variant="text" width="60%" height="24px" />
+                <Skeleton variant="text" width="80%" height="16px" />
+                <Skeleton variant="text" width="100%" height="80px" />
+                <Skeleton variant="text" width="40%" height="16px" />
+              </div>
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <EmptyState
+            icon="folder"
+            title="No projects configured"
+            description="Add your first project to start running AI agent tasks. Projects connect your GitLab repositories to the Codex runner."
+          />
+        ) : sortedProjects.length === 0 ? (
+          <EmptyState
+            icon="alert"
+            title="No matching projects"
+            description="No projects match your current search and filter criteria. Try adjusting your filters or clearing them to see all projects."
+            actionLabel="Clear Filters"
+            onAction={clearFilters}
+          />
+        ) : (
+          <div className="projects-grid">
+            {sortedProjects.map((project) => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onView={() => navigate(`/projects/${project.id}`)}
+                onEdit={handleEditSelect}
+                onDelete={handleDelete}
+                onSubmitTask={(proj) => navigate('/', { state: { projectId: proj.id } })}
+                onCopyRefreshCLI={copyRefreshCommand}
+                patConfigured={patStatus.configured}
+                sessionConfigured={patStatus.session_configured}
+              />
+            ))}
+          </div>
+        )}
+
+        {deleteTarget ? (
+          <div className="modal-overlay" onClick={() => setDeleteTarget(null)}>
+            <div
+              className="modal-content"
+              onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="delete-project-title"
+              aria-describedby="delete-project-description"
+            >
+              <h3 id="delete-project-title">Delete Project</h3>
+              <p id="delete-project-description">
+                Remove <strong>{deleteTarget.name}</strong> from the runner? Completed task logs will remain
+                available, but future runs will no longer reference this project.
+              </p>
+              {deleteError && <div className="error-banner">{deleteError}</div>}
+              <div className="modal-actions">
+                <button type="button" onClick={confirmDelete} disabled={deleteSubmitting} className="btn-danger">
+                  {deleteSubmitting ? 'Deleting…' : 'Confirm Deletion'}
+                </button>
+                <button type="button" className="ghost-button" onClick={() => setDeleteTarget(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </ErrorBoundary>
   );
 }
 

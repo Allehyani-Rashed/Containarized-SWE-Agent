@@ -7,6 +7,7 @@ import { CodexModel, TaskCreatePayload, ProjectBranch, Task, TaskChangeMode } fr
 import { formatTimestamp } from '../utils/time';
 import { useProjects } from '../hooks/useProjectsData';
 import { usePatStatus } from '../hooks/usePatStatus';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import {
   Card,
   Button,
@@ -376,14 +377,15 @@ function TaskSubmitPage() {
   const bannerMessage = error ?? projectsError ?? patStatusError ?? modelsError;
 
   return (
-    <div className="task-submit-page">
-      {bannerMessage && (
-        <InfoPanel variant="error" title="Error" className="page-banner">
-          {bannerMessage}
-        </InfoPanel>
-      )}
+    <ErrorBoundary>
+      <div className="task-submit-page">
+        {bannerMessage && (
+          <InfoPanel variant="error" title="Error" className="page-banner">
+            {bannerMessage}
+          </InfoPanel>
+        )}
 
-      <div className="task-submit-grid">
+        <div className="task-submit-grid">
         {/* Left Column: Task Submission Form */}
         <div className="task-submit-main">
           <Card className="task-submit-card">
@@ -767,7 +769,8 @@ Example:
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </ErrorBoundary>
   );
 }
 
