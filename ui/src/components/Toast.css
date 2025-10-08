@@ -1,0 +1,46 @@
+/* Toast-specific styles */
+/* Most styling is handled via inline styles in the Toaster component */
+
+/* Ensure toast container has proper z-index */
+:global([data-sonner-toaster]) {
+  z-index: 9999;
+}
+
+/* Animation overrides for smoother transitions */
+:global([data-sonner-toast]) {
+  animation: slideIn 0.2s ease-out;
+}
+
+:global([data-sonner-toast][data-removed="true"]) {
+  animation: slideOut 0.2s ease-in forwards;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+/* Ensure proper spacing on mobile */
+@media (max-width: 640px) {
+  :global([data-sonner-toaster]) {
+    right: var(--space-4);
+    left: var(--space-4);
+  }
+}

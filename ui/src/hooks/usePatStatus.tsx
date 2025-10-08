@@ -81,11 +81,48 @@ export function PatStatusProvider({ children }: ProviderProps) {
     void refresh();
   }, [refresh]);
 
+  // Polling with Page Visibility API integration
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, 15000);
-    return () => window.clearInterval(interval);
+    let interval: number | null = null;
+
+    const startPolling = () => {
+      if (interval === null) {
+        interval = window.setInterval(() => {
+          void refresh();
+        }, 15000);
+      }
+    };
+
+    const stopPolling = () => {
+      if (interval !== null) {
+        window.clearInterval(interval);
+        interval = null;
+      }
+    };
+
+    // Handle visibility change
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        // Resume polling and immediately refresh when tab becomes visible
+        void refresh();
+        startPolling();
+      }
+    };
+
+    // Start polling initially if document is visible
+    if (!document.hidden) {
+      startPolling();
+    }
+
+    // Listen for visibility changes
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [refresh]);
 
   const value = useMemo(

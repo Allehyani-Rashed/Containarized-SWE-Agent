@@ -4,8 +4,10 @@ import AppShell from './components/AppShell';
 import { ProjectsProvider } from './hooks/useProjectsData';
 import { PatStatusProvider } from './hooks/usePatStatus';
 import PageLoadingSkeleton from './components/PageLoadingSkeleton';
+import { useToastAnnouncer } from './components/Toast';
 import './App.css';
 
+// Lazy load all page components
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'));
 const ProjectDetailPageNew = lazy(() => import('./pages/ProjectDetailPageNew'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
@@ -14,6 +16,9 @@ const TaskSubmitPage = lazy(() => import('./pages/TaskSubmitPage'));
 const HelpPage = lazy(() => import('./pages/HelpPage'));
 
 function App() {
+  // Connect toast announcements to ARIA live region
+  useToastAnnouncer();
+
   return (
     <Routes>
       <Route
