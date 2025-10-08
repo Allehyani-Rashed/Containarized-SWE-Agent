@@ -295,7 +295,10 @@ class RefreshProjectCacheTests(unittest.TestCase):
 
         fetch_invocations = [call for call in git_calls if call[:4] == ["git", "fetch", "--tags", "--force"]]
         self.assertTrue(
-            any("release" in call for call in fetch_invocations),
+            any(
+                any("release" in part for part in call[4:])
+                for call in fetch_invocations
+            ),
             "Expected release branch fetch during refresh",
         )
 

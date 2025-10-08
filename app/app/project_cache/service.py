@@ -91,12 +91,13 @@ class ProjectCacheService:
         log = log_fn or self._logger.info
         ensure_cache_root(self._cache_root_override)
 
-        branch = (default_branch or "").strip()
-        if not branch:
+        branch_input = (default_branch or "").strip()
+        if not branch_input:
             raise ProjectCacheError(
                 "Project default branch is not configured; cannot bootstrap cache",
                 reason="missing-default-branch",
             )
+        branch, _, _ = project_cache_git_ops.compute_branch_refspec(branch_input)
 
         repo_path = self.repo_path_for(gitlab_host, project_path)
         repo_path.parent.mkdir(parents=True, exist_ok=True)
@@ -256,12 +257,13 @@ class ProjectCacheService:
                         reason="non-git-cache",
                     )
 
-                branch = (default_branch or "").strip()
-                if not branch:
+                branch_input = (default_branch or "").strip()
+                if not branch_input:
                     raise ProjectCacheError(
                         "Project default branch is not configured; cannot refresh cache",
                         reason="missing-default-branch",
                     )
+                branch, remote_ref, tracking_ref = project_cache_git_ops.compute_branch_refspec(branch_input)
 
                 metadata = load_metadata(repo_path)
                 try:
@@ -290,19 +292,36 @@ class ProjectCacheService:
                 remote_branch_exists_flag = False
                 if remote_exists_flag:
                     if dry_run:
-                        log(f"RUNNER_GIT_DRY_RUN=1 set; skipping git fetch origin {branch} for {identifier}")
+                        log(
+                            (
+                                "RUNNER_GIT_DRY_RUN=1 set; skipping git fetch "
+                                f"origin {remote_ref}:{tracking_ref} for {identifier}"
+                            )
+                        )
                     else:
-                        log(f"Fetching origin/{branch} for {identifier}")
+                        log(
+                            (
+                                f"Fetching origin/{branch} (via {remote_ref}:{tracking_ref}) "
+                                f"for {identifier}"
+                            )
+                        )
                         fetch_start = time.perf_counter()
                         fetch_result = project_cache_git_ops.run_git_command(
-                            ["git", "fetch", "--tags", "--force", "origin", branch],
+                            [
+                                "git",
+                                "fetch",
+                                "--tags",
+                                "--force",
+                                "origin",
+                                f"+{remote_ref}:{tracking_ref}",
+                            ],
                             repo_path,
                             env,
                         )
                         fetch_duration = time.perf_counter() - fetch_start
                         project_cache_git_ops.log_git_result(
                             log,
-                            f"git fetch origin/{branch} for {identifier}",
+                            f"git fetch origin {remote_ref}:{tracking_ref} for {identifier}",
                             fetch_result,
                             duration=fetch_duration,
                         )

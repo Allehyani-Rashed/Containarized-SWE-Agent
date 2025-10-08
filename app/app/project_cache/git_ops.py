@@ -25,6 +25,41 @@ def git_env() -> dict[str, str]:
     return env
 
 
+def compute_branch_refspec(branch: str) -> tuple[str, str, str]:
+    """Return the branch name plus remote/local refs suitable for fetch commands."""
+
+    raw = (branch or "").strip()
+    if not raw:
+        raise ProjectCacheError("Branch name is required", reason="missing-branch")
+
+    prefixes = (
+        "refs/remotes/origin/",
+        "origin/",
+        "refs/heads/",
+    )
+    normalized = raw
+    for prefix in prefixes:
+        if normalized.startswith(prefix):
+            normalized = normalized[len(prefix) :]
+            break
+    else:
+        if normalized.startswith("refs/"):
+            raise ProjectCacheError(
+                (
+                    f"Unsupported branch reference '{branch}'; expected a refs/heads/* ref or short branch name."
+                ),
+                reason="invalid-branch",
+            )
+
+    normalized = normalized.strip()
+    if not normalized:
+        raise ProjectCacheError("Branch name is required", reason="missing-branch")
+
+    remote_ref = f"refs/heads/{normalized}"
+    tracking_ref = f"refs/remotes/origin/{normalized}"
+    return normalized, remote_ref, tracking_ref
+
+
 def run_git_command(args: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
@@ -251,8 +286,15 @@ def sync_additional_branch(
     identifier: str,
     dry_run: bool,
 ) -> None:
+    normalized, remote_ref, tracking_ref = compute_branch_refspec(branch)
+
     if dry_run:
-        log_fn(f"RUNNER_GIT_DRY_RUN=1 set; would fetch origin/{branch} for {identifier}")
+        log_fn(
+            (
+                "RUNNER_GIT_DRY_RUN=1 set; would fetch "
+                f"origin {remote_ref} into {tracking_ref} for {identifier}"
+            )
+        )
         return
 
     fetch_result = run_git_command([
@@ -261,22 +303,27 @@ def sync_additional_branch(
         "--tags",
         "--force",
         "origin",
-        branch,
+        f"+{remote_ref}:{tracking_ref}",
     ], repo_path, env)
     if fetch_result.returncode != 0:
-        raise command_error(repo_path, fetch_result, identifier=identifier, branch=branch)
-    log_fn(f"Fetched origin/{branch} while refreshing cache {identifier}")
+        raise command_error(repo_path, fetch_result, identifier=identifier, branch=normalized)
+    log_fn(
+        (
+            f"Fetched origin/{normalized} (via {remote_ref}:{tracking_ref}) "
+            f"while refreshing cache {identifier}"
+        )
+    )
 
-    if not branch_exists(repo_path, env, branch):
+    if not branch_exists(repo_path, env, normalized):
         checkout_result = run_git_command([
             "git",
             "branch",
-            branch,
-            f"origin/{branch}",
+            normalized,
+            f"origin/{normalized}",
         ], repo_path, env)
         if checkout_result.returncode != 0:
-            raise command_error(repo_path, checkout_result, identifier=identifier, branch=branch)
-        log_fn(f"Created local tracking branch {branch} for cache {identifier}")
+            raise command_error(repo_path, checkout_result, identifier=identifier, branch=normalized)
+        log_fn(f"Created local tracking branch {normalized} for cache {identifier}")
 
 
 def friendly_git_error(
@@ -364,6 +411,7 @@ def configured_additional_branches() -> list[str]:
 __all__ = [
     "branch_exists",
     "command_error",
+    "compute_branch_refspec",
     "configured_additional_branches",
     "create_askpass_helper",
     "directory_size_bytes",
