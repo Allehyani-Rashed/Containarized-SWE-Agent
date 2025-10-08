@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint src",
     "test": "node ./scripts/run-tests.mjs",
-    "test:e2e": "playwright test --config ./playwright.config.ts"
+    "test:e2e": "playwright test --config ./playwright.config.ts",
+    "analyze": "vite build && npx vite-bundle-visualizer",
+    "bundle-check": "bundlesize"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -23,13 +25,37 @@
     "@typescript-eslint/eslint-plugin": "^7.14.1",
     "@typescript-eslint/parser": "^7.14.1",
     "@vitejs/plugin-react": "^4.3.0",
+    "bundlesize": "^0.18.2",
     "eslint": "^8.57.0",
     "eslint-plugin-react-hooks": "^4.6.2",
     "eslint-plugin-react-refresh": "^0.4.7",
     "globals": "^15.1.0",
     "jsdom": "^27.0.0",
+    "rollup-plugin-visualizer": "^6.0.4",
     "typescript": "^5.4.5",
     "vite": "^5.2.10",
     "vitest": "^1.6.0"
-  }
+  },
+  "bundlesize": [
+    {
+      "path": "dist/assets/index-*.js",
+      "maxSize": "60 KB",
+      "compression": "gzip"
+    },
+    {
+      "path": "dist/assets/TaskListPage-*.js",
+      "maxSize": "30 KB",
+      "compression": "gzip"
+    },
+    {
+      "path": "dist/assets/ProjectsPage-*.js",
+      "maxSize": "30 KB",
+      "compression": "gzip"
+    },
+    {
+      "path": "dist/assets/react-vendor-*.js",
+      "maxSize": "40 KB",
+      "compression": "gzip"
+    }
+  ]
 }

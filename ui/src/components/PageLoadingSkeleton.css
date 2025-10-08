@@ -1,0 +1,48 @@
+.page-loading-skeleton {
+  padding: var(--space-8);
+  animation: fadeIn 0.3s ease-in;
+}
+
+.skeleton-header {
+  width: 240px;
+  height: 32px;
+  background: var(--gray-200);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-6);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeleton-line {
+  height: 16px;
+  background: var(--gray-200);
+  border-radius: var(--radius-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-line.short {
+  width: 60%;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

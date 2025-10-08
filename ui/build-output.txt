@@ -1,0 +1,38 @@
+
+> codex-ui@0.0.0 build
+> tsc && vite build
+
+vite v5.4.20 building for production...
+transforming...
+✓ 104 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                  0.88 kB │ gzip:  0.47 kB
+dist/assets/Skeleton-HlHSOCOL.css                2.85 kB │ gzip:  0.91 kB
+dist/assets/InfoPanel-W80nf9TE.css               3.45 kB │ gzip:  1.02 kB
+dist/assets/StatusBadge-C8D2Q0ro.css             5.07 kB │ gzip:  1.50 kB
+dist/assets/SettingsPage-Cpl3Tiut.css            5.55 kB │ gzip:  1.24 kB
+dist/assets/ProjectsPage-CaAJRe5U.css            5.82 kB │ gzip:  1.26 kB
+dist/assets/HelpPage-CBIhNAD3.css                6.56 kB │ gzip:  1.19 kB
+dist/assets/ProjectDetailPageNew-BtB6jgpI.css    7.33 kB │ gzip:  1.59 kB
+dist/assets/TaskSubmitPage-D4T7hfD1.css          7.99 kB │ gzip:  1.71 kB
+dist/assets/ProjectCard-9Ivc0pQx.css             9.80 kB │ gzip:  2.21 kB
+dist/assets/TaskListPage-C5Cd9tZi.css           11.81 kB │ gzip:  2.31 kB
+dist/assets/index-BrOAAH9C.css                  36.01 kB │ gzip:  7.23 kB
+dist/assets/settings-CrTjxi8L.js                 0.24 kB │ gzip:  0.19 kB
+dist/assets/StatusBadge-DtpMMCq9.js              0.43 kB │ gzip:  0.26 kB
+dist/assets/time-C9U_LvMs.js                     0.67 kB │ gzip:  0.41 kB
+dist/assets/Card-BY47trBt.js                     0.73 kB │ gzip:  0.43 kB
+dist/assets/models-ChGYbQBI.js                   1.05 kB │ gzip:  0.48 kB
+dist/assets/InfoPanel-CdlFn1N9.js                1.13 kB │ gzip:  0.46 kB
+dist/assets/Skeleton-B6D6LgOu.js                 1.36 kB │ gzip:  0.64 kB
+dist/assets/Input-C7N9KTKH.js                    3.80 kB │ gzip:  1.05 kB
+dist/assets/ProjectDetailPageNew-oJrtWlVk.js     9.23 kB │ gzip:  2.51 kB
+dist/assets/ProjectsPage-B4qqcCE6.js             9.95 kB │ gzip:  3.33 kB
+dist/assets/SettingsPage-C48F7B7c.js            11.14 kB │ gzip:  3.44 kB
+dist/assets/TaskSubmitPage-CBV9ByCv.js          14.07 kB │ gzip:  4.67 kB
+dist/assets/HelpPage-DeleCk0V.js                18.37 kB │ gzip:  4.47 kB
+dist/assets/index-DhDSppZG.js                   22.95 kB │ gzip:  7.47 kB
+dist/assets/TaskListPage-DIhnvmG1.js            35.43 kB │ gzip:  9.78 kB
+dist/assets/react-vendor-BRCPEtP3.js           163.85 kB │ gzip: 53.43 kB
+✓ built in 1.78s

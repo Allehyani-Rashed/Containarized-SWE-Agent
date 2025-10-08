@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import type { IncomingMessage } from 'http';
 import react from '@vitejs/plugin-react';
+import { visualizer } from 'rollup-plugin-visualizer';
 
 function spaBypass(req: IncomingMessage): string | undefined {
   const accepts = req.headers.accept ?? '';
@@ -11,7 +12,24 @@ function spaBypass(req: IncomingMessage): string | undefined {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    visualizer({
+      filename: './dist/stats.html',
+      gzipSize: true,
+      brotliSize: true,
+    }),
+  ],
+  build: {
+    chunkSizeWarningLimit: 500,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     css: true,
