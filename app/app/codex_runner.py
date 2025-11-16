@@ -61,6 +61,7 @@ def run_codex(
     codex_token: Optional[str],
     chatgpt_session_bundle: Optional[str],
     claude_api_key: Optional[str] = None,
+    claude_session_bundle: Optional[str] = None,
     target_branch: str,
     branch_name: str,
     mr_title: str,
@@ -108,6 +109,9 @@ def run_codex(
         })
         if claude_api_key:
             runner_env["CLAUDE_API_KEY"] = claude_api_key
+        if claude_session_bundle:
+            encoded_bundle = base64.b64encode(claude_session_bundle.encode("utf-8")).decode("ascii")
+            runner_env["CLAUDE_SESSION_BUNDLE_B64"] = encoded_bundle
     else:
         # Codex specific environment variables
         runner_env.update({

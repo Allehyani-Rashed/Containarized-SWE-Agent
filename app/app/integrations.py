@@ -16,6 +16,7 @@ from .secrets import SecretError, get_secret_manager
 
 GITLAB_PAT_KIND = "gitlab_pat"
 CHATGPT_SESSION_KIND = "chatgpt_session"
+CLAUDE_SESSION_KIND = "claude_session"
 VERIFICATION_STATUS_VERIFIED = "verified"
 VERIFICATION_STATUS_ERROR = "error"
 
@@ -24,12 +25,23 @@ class ChatGPTSessionError(RuntimeError):
     """Raised when a ChatGPT session bundle is invalid or expired."""
 
 
+class ClaudeSessionError(RuntimeError):
+    """Raised when a Claude session bundle is invalid or expired."""
+
+
 class GitLabPATVerificationError(RuntimeError):
     """Raised when PAT verification cannot proceed due to configuration issues."""
 
 
 @dataclass
 class ChatGPTSessionMaterial:
+    raw: str
+    expires_at: Optional[datetime]
+    token_preview: Optional[str]
+
+
+@dataclass
+class ClaudeSessionMaterial:
     raw: str
     expires_at: Optional[datetime]
     token_preview: Optional[str]
@@ -228,6 +240,111 @@ def get_chatgpt_session_bundle(session: Session) -> Optional[ChatGPTSessionMater
         return _parse_session_bundle(decrypted)
     except ChatGPTSessionError as exc:
         raise ChatGPTSessionError(str(exc)) from exc
+
+
+def _ensure_claude_session_credential(session: Session) -> IntegrationCredential:
+    credential = _get_credential(session, CLAUDE_SESSION_KIND)
+    if credential is None:
+        credential = IntegrationCredential(kind=CLAUDE_SESSION_KIND)
+        session.add(credential)
+        session.flush()
+    return credential
+
+
+def _parse_claude_session_bundle(raw_bundle: str) -> ClaudeSessionMaterial:
+    """Parse Claude session bundle from ~/.claude/auth.json format."""
+    try:
+        payload = json.loads(raw_bundle)
+    except json.JSONDecodeError as exc:
+        raise ClaudeSessionError("Session bundle must be valid JSON") from exc
+
+    if not isinstance(payload, dict):
+        raise ClaudeSessionError("Session bundle must decode to an object")
+
+    # Claude auth.json typically has structure like:
+    # {"sessionKey": "...", "expiresAt": "..."} or similar
+    # Look for common session key fields
+    token_value = None
+    for key in ("sessionKey", "session_key", "accessToken", "access_token", "apiKey", "api_key"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            token_value = value.strip()
+            break
+
+    if not token_value:
+        raise ClaudeSessionError(
+            "Session bundle missing a session/access token; expected keys: sessionKey, session_key, accessToken, access_token, apiKey, or api_key",
+        )
+
+    # Parse expiration
+    expires_at = None
+    for key in ("expiresAt", "expires_at", "expiry", "expires", "expirationTime"):
+        raw_expiry = payload.get(key)
+        if not raw_expiry:
+            continue
+        if isinstance(raw_expiry, (int, float)):
+            expires_at = datetime.fromtimestamp(float(raw_expiry), tz=timezone.utc)
+            break
+        if isinstance(raw_expiry, str):
+            normalized = raw_expiry.strip()
+            if not normalized:
+                continue
+            if normalized.endswith("Z"):
+                normalized = normalized[:-1] + "+00:00"
+            try:
+                expires_at = datetime.fromisoformat(normalized)
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                break
+            except ValueError:
+                continue
+        if expires_at is not None:
+            break
+
+    token_preview = token_value[:6] + "…" if len(token_value) > 6 else token_value
+    return ClaudeSessionMaterial(raw=raw_bundle, expires_at=expires_at, token_preview=token_preview)
+
+
+def set_claude_session_bundle(session: Session, bundle: str, updated_by: Optional[str]) -> IntegrationCredential:
+    material = _parse_claude_session_bundle(bundle)
+    if material.expires_at is not None and material.expires_at <= datetime.now(timezone.utc):
+        expires_str = material.expires_at.isoformat()
+        raise ClaudeSessionError(f"Session bundle expired at {expires_str}; log in again and retry")
+
+    credential = _ensure_claude_session_credential(session)
+    manager = get_secret_manager()
+    credential.token_encrypted = manager.encrypt(material.raw)
+    credential.updated_at = datetime.now(timezone.utc)
+    credential.updated_by = _normalize_actor(updated_by)
+    session.add(credential)
+    _record_audit(session, "claude_session.rotated", credential.updated_by, details=None)
+    return credential
+
+
+def clear_claude_session_bundle(session: Session, updated_by: Optional[str]) -> IntegrationCredential:
+    credential = _ensure_claude_session_credential(session)
+    credential.token_encrypted = None
+    credential.updated_at = datetime.now(timezone.utc)
+    credential.updated_by = _normalize_actor(updated_by)
+    session.add(credential)
+    _record_audit(session, "claude_session.cleared", credential.updated_by, details=None)
+    return credential
+
+
+def get_claude_session_bundle(session: Session) -> Optional[ClaudeSessionMaterial]:
+    credential = _get_credential(session, CLAUDE_SESSION_KIND)
+    if credential is None or not credential.token_encrypted:
+        return None
+    manager = get_secret_manager()
+    try:
+        decrypted = manager.decrypt(credential.token_encrypted)
+    except Exception as exc:  # noqa: BLE001 - normalize downstream failure
+        raise ClaudeSessionError("Unable to decrypt stored Claude session bundle") from exc
+
+    try:
+        return _parse_claude_session_bundle(decrypted)
+    except ClaudeSessionError as exc:
+        raise ClaudeSessionError(str(exc)) from exc
 
 
 def verify_gitlab_pat(

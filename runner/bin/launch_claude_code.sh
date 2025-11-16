@@ -97,8 +97,37 @@ payload = {"agent_version": version, "mode": "docker", "flags": flags, "model": 
 metadata_path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
 PY
 
-# Claude Code uses ANTHROPIC_API_KEY environment variable for authentication
-# If CLAUDE_API_KEY is provided, set it as ANTHROPIC_API_KEY
+# Claude Code authentication setup
+# Option 1: Session bundle (from ~/.claude/auth.json)
+if [[ -n "${CLAUDE_SESSION_BUNDLE_B64:-}" ]]; then
+  export CLAUDE_SESSION_BUNDLE_PATH="${HOME}/.claude/auth.json"
+  python3 - <<'PY'
+import base64
+import os
+import sys
+from pathlib import Path
+
+bundle_b64 = os.environ.get("CLAUDE_SESSION_BUNDLE_B64", "")
+target_path = Path(os.environ.get("CLAUDE_SESSION_BUNDLE_PATH", ""))
+if not bundle_b64:
+    raise SystemExit(0)
+try:
+    decoded = base64.b64decode(bundle_b64).decode("utf-8")
+except Exception as exc:
+    print(f"[claude-launch] failed to decode session bundle: {exc}", file=sys.stderr)
+    raise SystemExit(96) from exc
+if not target_path:
+    print("[claude-launch] missing CLAUDE_SESSION_BUNDLE_PATH", file=sys.stderr)
+    raise SystemExit(96)
+target_path.parent.mkdir(parents=True, exist_ok=True)
+target_path.write_text(decoded, encoding="utf-8")
+os.chmod(target_path, 0o600)
+print(f"[claude-launch] Session bundle staged at {target_path}", file=sys.stderr)
+PY
+  unset CLAUDE_SESSION_BUNDLE_B64
+fi
+
+# Option 2: API key (CLAUDE_API_KEY → ANTHROPIC_API_KEY)
 if [[ -n "${CLAUDE_API_KEY:-}" ]]; then
   export ANTHROPIC_API_KEY="${CLAUDE_API_KEY}"
   unset CLAUDE_API_KEY

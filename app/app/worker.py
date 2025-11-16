@@ -18,7 +18,10 @@ from .codex_runner import CodexRunnerError, run_codex
 from .integrations import (
     ChatGPTSessionError,
     ChatGPTSessionMaterial,
+    ClaudeSessionError,
+    ClaudeSessionMaterial,
     get_chatgpt_session_bundle,
+    get_claude_session_bundle,
     get_gitlab_pat_token,
 )
 from .models import Project, Task, TaskStatus
@@ -70,6 +73,9 @@ class TaskQueueManager:
         self._chatgpt_session_cache: ChatGPTSessionMaterial | None = None
         self._chatgpt_session_known_missing: bool = False
         self._chatgpt_session_present: bool = False
+        self._claude_session_cache: ClaudeSessionMaterial | None = None
+        self._claude_session_known_missing: bool = False
+        self._claude_session_present: bool = False
         LOG_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
         self._thread = Thread(target=self._run, name="task-worker", daemon=True)
         self._thread.start()
@@ -191,10 +197,23 @@ class TaskQueueManager:
                         session.commit()
                         self._mark_complete(task_id)
                         return
-                try:
-                    session_bundle = self._resolve_chatgpt_session_bundle(session)
-                except ChatGPTSessionError as exc:
-                    session_bundle_error = str(exc)
+                # Resolve agent-specific credentials
+                session_bundle = None
+                session_bundle_error = None
+                claude_session = None
+                claude_session_error = None
+
+                if task_agent_type == "codex":
+                    try:
+                        session_bundle = self._resolve_chatgpt_session_bundle(session)
+                    except ChatGPTSessionError as exc:
+                        session_bundle_error = str(exc)
+                else:  # claude-code
+                    try:
+                        claude_session = self._resolve_claude_session_bundle(session)
+                    except ClaudeSessionError as exc:
+                        claude_session_error = str(exc)
+
                 project_gitlab_host = gitlab_host
                 session.add(task)
                 session.commit()
@@ -212,7 +231,9 @@ class TaskQueueManager:
                 self._mark_complete(task_id)
                 return
 
-            require_codex_token = os.environ.get("RUNNER_DISABLE_DOCKER", "0") != "1"
+            require_credentials = os.environ.get("RUNNER_DISABLE_DOCKER", "0") != "1"
+
+            # Handle Codex credentials
             session_bundle_raw: str | None = None
             session_bundle_expires_at: datetime | None = None
             if session_bundle is not None:
@@ -226,13 +247,36 @@ class TaskQueueManager:
                     session_bundle = None
                     session_bundle_expires_at = None
 
-            using_api_token = bool(codex_token)
-            using_session_bundle = bool(session_bundle_raw) and not using_api_token
+            # Handle Claude credentials
+            claude_session_raw: str | None = None
+            claude_session_expires_at: datetime | None = None
+            if claude_session is not None:
+                claude_session_raw = claude_session.raw
+                claude_session_expires_at = claude_session.expires_at
+                if claude_session_expires_at is not None and claude_session_expires_at <= datetime.now(timezone.utc):
+                    claude_session_error = (
+                        f"Claude session bundle expired at {claude_session_expires_at.isoformat()}; import a new session"
+                    )
+                    claude_session_raw = None
+                    claude_session = None
+                    claude_session_expires_at = None
+
+            # Validate credentials based on agent type
             credential_error: str | None = None
-            if not using_api_token and not using_session_bundle and require_codex_token:
-                credential_error = session_bundle_error or (
-                    "Codex credentials unavailable; configure a CODEX access token or import a ChatGPT session bundle"
-                )
+            using_api_token = False
+            using_session_bundle = False
+
+            if task_agent_type == "codex":
+                using_api_token = bool(codex_token)
+                using_session_bundle = bool(session_bundle_raw) and not using_api_token
+                if not using_api_token and not using_session_bundle and require_credentials:
+                    credential_error = session_bundle_error or (
+                        "Codex credentials unavailable; configure a CODEX access token or import a ChatGPT session bundle"
+                    )
+            else:  # claude-code
+                using_session_bundle = bool(claude_session_raw)
+                # Claude Code can work without credentials if ANTHROPIC_API_KEY is set in environment
+                # So we don't strictly require credentials here
 
             if credential_error:
                 self._append_log(task_id, credential_error)
@@ -248,35 +292,40 @@ class TaskQueueManager:
                 return
 
             credential_description: str | None = None
-            if using_api_token:
-                if session_bundle_raw:
-                    credential_description = "Codex credential: using API access token (ChatGPT session stored but not required)"
-                else:
-                    credential_description = "Codex credential: using API access token"
-            elif using_session_bundle:
-                if session_bundle_expires_at is not None:
-                    credential_description = (
-                        "Codex credential: using ChatGPT session bundle (expires "
-                        f"{session_bundle_expires_at.isoformat()})"
-                    )
-                else:
+            if task_agent_type == "codex":
+                if using_api_token:
+                    if session_bundle_raw:
+                        credential_description = "Codex credential: using API access token (ChatGPT session stored but not required)"
+                    else:
+                        credential_description = "Codex credential: using API access token"
+                elif using_session_bundle:
                     credential_description = "Codex credential: using ChatGPT session bundle"
-            elif not require_codex_token:
-                credential_description = "Codex credential: not required (Docker disabled)"
+            else:  # claude-code
+                if using_session_bundle:
+                    credential_description = "Claude credential: using Claude session bundle"
+                else:
+                    credential_description = "Claude credential: using ANTHROPIC_API_KEY from environment"
 
             if credential_description:
                 self._append_log(task_id, credential_description)
 
-            if session_bundle_error:
+            # Log credential issues
+            if task_agent_type == "codex" and session_bundle_error:
                 if using_api_token:
                     self._append_log(
                         task_id,
                         f"ChatGPT session bundle unusable ({session_bundle_error}); proceeding with configured API token",
                     )
-                elif not require_codex_token:
+                elif not require_credentials:
                     self._append_log(
                         task_id,
                         f"ChatGPT session bundle unusable ({session_bundle_error}); continuing with local stub",
+                    )
+            elif task_agent_type == "claude-code" and claude_session_error:
+                if not using_session_bundle:
+                    self._append_log(
+                        task_id,
+                        f"Claude session bundle unusable ({claude_session_error}); proceeding with ANTHROPIC_API_KEY",
                     )
 
             redactions = [gitlab_token, codex_token or ""]
@@ -286,6 +335,12 @@ class TaskQueueManager:
                     redactions.append(base64.b64encode(session_bundle_raw.encode("utf-8")).decode("ascii"))
                 except Exception:
                     # Base64 encoding failure should not block task execution; raw value already registered.
+                    pass
+            if claude_session_raw:
+                redactions.append(claude_session_raw)
+                try:
+                    redactions.append(base64.b64encode(claude_session_raw.encode("utf-8")).decode("ascii"))
+                except Exception:
                     pass
             self._register_redactions(task_id, redactions)
             branch_name = _generate_branch_name(task_id)
@@ -372,6 +427,7 @@ class TaskQueueManager:
                     codex_token=codex_token,
                     chatgpt_session_bundle=session_bundle_raw,
                     claude_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+                    claude_session_bundle=claude_session_raw,
                     target_branch=target_branch,
                     branch_name=branch_name,
                     mr_title=mr_title,
@@ -579,6 +635,29 @@ class TaskQueueManager:
                 self._chatgpt_session_known_missing = False
         with self._state_lock:
             self._chatgpt_session_present = material is not None
+        return material
+
+    def _resolve_claude_session_bundle(self, session: Session) -> ClaudeSessionMaterial | None:
+        with self._cache_lock:
+            cached = self._claude_session_cache
+            known_missing = self._claude_session_known_missing
+        if cached is not None:
+            return cached
+        if known_missing:
+            with self._state_lock:
+                self._claude_session_present = False
+            return None
+
+        material = get_claude_session_bundle(session)
+        with self._cache_lock:
+            if material is None:
+                self._claude_session_cache = None
+                self._claude_session_known_missing = True
+            else:
+                self._claude_session_cache = material
+                self._claude_session_known_missing = False
+        with self._state_lock:
+            self._claude_session_present = material is not None
         return material
 
     def notify_gitlab_pat_stored(self, actor: Optional[str], occurred_at: Optional[datetime]) -> None:
