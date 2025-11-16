@@ -17,8 +17,10 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 codex
 COPY runner/bin/codex /usr/local/bin/codex
 COPY runner/bin/finish_task.sh /usr/local/bin/finish_task.sh
 COPY runner/bin/launch_codex.sh /usr/local/bin/launch_codex.sh
+COPY runner/bin/launch_claude_code.sh /usr/local/bin/launch_claude_code.sh
 COPY runner/bin/install_codex_agent.sh /usr/local/bin/install_codex_agent.sh
-RUN chmod +x /usr/local/bin/codex /usr/local/bin/finish_task.sh /usr/local/bin/launch_codex.sh /usr/local/bin/install_codex_agent.sh
+COPY runner/bin/install_claude_code.sh /usr/local/bin/install_claude_code.sh
+RUN chmod +x /usr/local/bin/codex /usr/local/bin/finish_task.sh /usr/local/bin/launch_codex.sh /usr/local/bin/launch_claude_code.sh /usr/local/bin/install_codex_agent.sh /usr/local/bin/install_claude_code.sh
 
 RUN mkdir -p /opt/codex/bin /opt/codex/bootstrap
 COPY runner/codex_agent/ /opt/codex/bootstrap/
@@ -39,7 +41,14 @@ ENV CODEX_AGENT_PINNED_VERSION=${CODEX_AGENT_PINNED_VERSION} \
     CODEX_AGENT_FORCE_DOWNLOAD=${CODEX_AGENT_FORCE_DOWNLOAD}
 RUN /usr/local/bin/install_codex_agent.sh "${CODEX_AGENT_TARBALL}" "${CODEX_AGENT_URL}"
 
-ENV PATH="/opt/codex/bin:${PATH}"
+# Install Claude Code
+ARG CLAUDE_CODE_PINNED_VERSION=""
+ARG CLAUDE_CODE_AUTO_DOWNLOAD=1
+ENV CLAUDE_CODE_PINNED_VERSION=${CLAUDE_CODE_PINNED_VERSION} \
+    CLAUDE_CODE_AUTO_DOWNLOAD=${CLAUDE_CODE_AUTO_DOWNLOAD}
+RUN /usr/local/bin/install_claude_code.sh
+
+ENV PATH="/opt/codex/bin:/opt/claude-code/bin:${PATH}"
 
 USER codex
 WORKDIR /home/codex

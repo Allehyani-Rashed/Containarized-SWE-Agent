@@ -52,12 +52,15 @@ def run_codex(
     workspace: Path,
     *,
     prompt: str,
+    agent_type: str = "codex",
+    model: Optional[str] = None,
     allowlist: Optional[Iterable[str]] = None,
     gitlab_host: str,
     gitlab_project_path: str,
     gitlab_token: str,
     codex_token: Optional[str],
     chatgpt_session_bundle: Optional[str],
+    claude_api_key: Optional[str] = None,
     target_branch: str,
     branch_name: str,
     mr_title: str,
@@ -71,7 +74,10 @@ def run_codex(
     if not gitlab_token:
         raise CodexRunnerError("GitLab token is required for finish_task operations")
 
-    metadata_path = workspace / CODEX_METADATA_FILENAME
+    # Determine metadata filename based on agent type
+    is_claude = agent_type == "claude-code"
+    metadata_filename = "CLAUDE_METADATA.json" if is_claude else CODEX_METADATA_FILENAME
+    metadata_path = workspace / metadata_filename
     result_path = workspace / "RUNNER_RESULT.json"
     for stale_path in (result_path, metadata_path):
         if stale_path.exists():
@@ -89,11 +95,26 @@ def run_codex(
         "BRANCH": branch_name,
         "MR_TITLE": mr_title,
         "TASK_ID": str(task_id),
-        "PROMPT": prompt,
         "RUNNER_RESULT_FILE": "RUNNER_RESULT.json",
-        "CODEX_METADATA_FILE": CODEX_METADATA_FILENAME,
-        "CODEX_INVOCATION_FLAGS": "--yolo --skip-git-repo-check",
     }
+
+    if is_claude:
+        # Claude Code specific environment variables
+        runner_env.update({
+            "CLAUDE_PROMPT": prompt,
+            "CLAUDE_METADATA_FILE": metadata_filename,
+            "CLAUDE_INVOCATION_FLAGS": "--dangerously-skip-permissions",
+            "CLAUDE_MODEL": model or "sonnet",
+        })
+        if claude_api_key:
+            runner_env["CLAUDE_API_KEY"] = claude_api_key
+    else:
+        # Codex specific environment variables
+        runner_env.update({
+            "PROMPT": prompt,
+            "CODEX_METADATA_FILE": metadata_filename,
+            "CODEX_INVOCATION_FLAGS": "--yolo --skip-git-repo-check",
+        })
 
     dry_run_flag = os.environ.get("RUNNER_GIT_DRY_RUN")
     if dry_run_flag is not None:
@@ -126,7 +147,7 @@ def run_codex(
         )
 
     try:
-        exit_code = _run_in_docker(workspace, prompt, allowlist, runner_env, log_fn)
+        exit_code = _run_in_docker(workspace, prompt, allowlist, runner_env, agent_type, log_fn)
     except (DockerException, CodexRunnerError) as exc:
         if log_fn:
             log_fn(f"Docker unavailable or failed ({exc}); using local stub")
@@ -151,6 +172,7 @@ def _run_in_docker(
     prompt: str,
     allowlist: Iterable[str],
     runner_env: dict[str, str],
+    agent_type: str,
     log_fn: Optional[Callable[[str], None]],
 ) -> int:
     if not RUNNER_CONTEXT.exists():
@@ -161,14 +183,17 @@ def _run_in_docker(
 
     volumes = {str(workspace): {"bind": "/work", "mode": "rw"}}
     environment = dict(runner_env)
-    environment.update(
-        {
-            "CODEX_PROMPT": prompt,
-            "EGRESS_ALLOWLIST": ",".join(allowlist),
-        }
-    )
 
-    command = ["/usr/local/bin/launch_codex.sh"]
+    # Determine the launcher script based on agent type
+    is_claude = agent_type == "claude-code"
+    if is_claude:
+        command = ["/usr/local/bin/launch_claude_code.sh"]
+        # Claude Code uses CLAUDE_PROMPT, which is already set in runner_env
+    else:
+        command = ["/usr/local/bin/launch_codex.sh"]
+        environment["CODEX_PROMPT"] = prompt
+
+    environment["EGRESS_ALLOWLIST"] = ",".join(allowlist)
 
     mem_limit = os.environ.get("RUNNER_MEM_LIMIT", DEFAULT_MEM_LIMIT)
     pids_limit_env = os.environ.get("RUNNER_PIDS_LIMIT")

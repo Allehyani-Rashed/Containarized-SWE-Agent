@@ -32,6 +32,8 @@ type Task = {
   project_id: number;
   prompt: string;
   status: 'pending' | 'running' | 'done' | 'failed';
+  agent_type: 'codex' | 'claude-code';
+  model: string | null;
   allowlist: string[];
   created_at: string;
   started_at: string | null;
@@ -57,6 +59,8 @@ const initialProjectForm = {
 const initialTaskForm = {
   projectId: '',
   prompt: '',
+  agent_type: 'codex',
+  model: '',
   allowlist: '',
 };
 
@@ -660,6 +664,8 @@ function App() {
         body: JSON.stringify({
           project_id: Number(taskForm.projectId),
           prompt: taskForm.prompt,
+          agent_type: taskForm.agent_type,
+          model: taskForm.model || null,
           allowlist,
         }),
       });
@@ -1076,11 +1082,42 @@ function App() {
             </select>
           </label>
           <label>
+            Agent Type
+            <select
+              value={taskForm.agent_type}
+              onChange={(event) => {
+                const newAgentType = event.target.value;
+                setTaskForm({
+                  ...taskForm,
+                  agent_type: newAgentType,
+                  model: newAgentType === 'claude-code' ? 'sonnet' : '',
+                });
+              }}
+              required
+            >
+              <option value="codex">Codex CLI</option>
+              <option value="claude-code">Claude Code</option>
+            </select>
+          </label>
+          {taskForm.agent_type === 'claude-code' && (
+            <label>
+              Model
+              <select
+                value={taskForm.model}
+                onChange={(event) => setTaskForm({ ...taskForm, model: event.target.value })}
+                required
+              >
+                <option value="sonnet">Claude Sonnet 4.5</option>
+                <option value="haiku">Claude Haiku 4.5</option>
+              </select>
+            </label>
+          )}
+          <label>
             Prompt
             <textarea
               value={taskForm.prompt}
               onChange={(event) => setTaskForm({ ...taskForm, prompt: event.target.value })}
-              placeholder="Explain what Codex should do..."
+              placeholder="Explain what the agent should do..."
               rows={4}
               required
             />
@@ -1116,10 +1153,11 @@ function App() {
                 <tr>
                   <th>ID</th>
                   <th>Project</th>
+                  <th>Agent</th>
+                  <th>Model</th>
                   <th>Status</th>
                   <th>Created</th>
                   <th>Finished</th>
-                  <th>Codex</th>
                   <th>Branch</th>
                   <th>Merge Request</th>
                 </tr>
@@ -1135,12 +1173,13 @@ function App() {
                     >
                       <td>{task.id}</td>
                       <td>{projectName}</td>
+                      <td>{task.agent_type === 'claude-code' ? 'Claude Code' : 'Codex CLI'}</td>
+                      <td>{task.model ?? '--'}</td>
                       <td>
                         <span className={`status status-${task.status}`}>{task.status}</span>
                       </td>
                       <td>{formatTimestamp(task.created_at)}</td>
                       <td>{formatTimestamp(task.finished_at)}</td>
-                      <td>{task.codex_invocation ?? '--'}</td>
                       <td>{task.branch ?? '--'}</td>
                       <td>
                         {task.mr_url ? (

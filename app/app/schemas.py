@@ -5,7 +5,7 @@ from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
 
-from .models import TaskStatus
+from .models import AgentType, TaskStatus
 
 
 class ProjectBase(SQLModel):
@@ -67,6 +67,8 @@ class ChatGPTSessionClearRequest(SQLModel):
 class TaskCreate(SQLModel):
     project_id: int
     prompt: str
+    agent_type: AgentType = AgentType.codex
+    model: Optional[str] = None
     allowlist: List[str] = Field(default_factory=list)
 
 
@@ -75,6 +77,8 @@ class TaskRead(SQLModel):
     project_id: int
     prompt: str
     status: TaskStatus
+    agent_type: AgentType
+    model: Optional[str]
     allowlist: List[str]
     created_at: datetime
     started_at: Optional[datetime]

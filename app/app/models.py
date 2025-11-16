@@ -16,6 +16,11 @@ class TaskStatus(str, Enum):
     failed = "failed"
 
 
+class AgentType(str, Enum):
+    codex = "codex"
+    claude_code = "claude-code"
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -58,6 +63,8 @@ class Task(SQLModel, table=True):
     project_id: int = Field(foreign_key="project.id", nullable=False, index=True)
     prompt: str
     status: TaskStatus = Field(default=TaskStatus.pending, nullable=False)
+    agent_type: AgentType = Field(default=AgentType.codex, nullable=False)
+    model: Optional[str] = Field(default=None, nullable=True)
     allowlist: list[str] = Field(
         default_factory=list,
         sa_column=Column(JSON, nullable=False, default=list),

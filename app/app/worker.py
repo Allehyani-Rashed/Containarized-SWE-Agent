@@ -165,6 +165,8 @@ class TaskQueueManager:
                 task.started_at = datetime.now(timezone.utc)
                 task_prompt = task.prompt or ""
                 task_allowlist = list(task.allowlist or [])
+                task_agent_type = task.agent_type.value if hasattr(task.agent_type, 'value') else task.agent_type
+                task_model = task.model
                 target_branch = project.default_branch
                 gitlab_host = project.gitlab_host
                 gitlab_project_path = project.gitlab_project_path
@@ -361,12 +363,15 @@ class TaskQueueManager:
                 result = run_codex(
                     sanitized_path,
                     prompt=task_prompt,
+                    agent_type=task_agent_type,
+                    model=task_model,
                     allowlist=effective_allowlist,
                     gitlab_host=gitlab_host,
                     gitlab_project_path=gitlab_project_path,
                     gitlab_token=gitlab_token,
                     codex_token=codex_token,
                     chatgpt_session_bundle=session_bundle_raw,
+                    claude_api_key=os.environ.get("ANTHROPIC_API_KEY"),
                     target_branch=target_branch,
                     branch_name=branch_name,
                     mr_title=mr_title,
