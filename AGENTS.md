@@ -71,3 +71,19 @@
 - Keep commits scoped to a single concern with passing tests or lint output included in the diff description.
 - Pull requests must describe the change, include reproduction steps or screenshots for UI work, reference related issues, and flag breaking runner changes.
 - Request review from both backend and frontend owners when touching cross-cutting code.
+- **Phase 14: Claude Code Integration (2025-11-16)** – Added full dual AI agent support:
+  - Backend extended with `AgentType` enum (`codex` | `claude-code`) and optional `model` field on Task model
+  - Database auto-migration adds `agent_type` (defaults to `codex`) and `model` columns
+  - Worker resolves credentials per agent: Codex uses API token or ChatGPT session, Claude Code uses Claude session bundle or `ANTHROPIC_API_KEY`
+  - Claude session management: `ClaudeSessionMaterial`, encrypted storage in `IntegrationCredential` (kind: `claude_session`), flexible parsing for various JSON formats
+  - Runner installs Claude Code via npm (`install_claude_code.sh`) alongside Codex CLI
+  - `launch_claude_code.sh` executes `claude -p --dangerously-skip-permissions --model <model> "<prompt>"` with session bundle staged to `~/.claude/auth.json` (mode 0600)
+  - UI agent selector dropdown with conditional model picker (Sonnet 4.5 | Haiku 4.5 for Claude Code)
+  - Task table displays agent type and model columns
+  - API accepts `agent_type` and `model` in TaskCreate schema
+  - Models: Sonnet 4.5 (`claude-sonnet-4-5-20250929`) for best performance, Haiku 4.5 (`claude-haiku-4-5-20251001`) for speed/cost efficiency
+  - Authentication priority: Claude session bundle → ANTHROPIC_API_KEY; Codex API token → ChatGPT session
+  - Full backward compatibility: tasks without `agent_type` default to `codex`
+- For Claude Code tasks, export `ANTHROPIC_API_KEY` or import a Claude session bundle from `~/.claude/auth.json`; session bundles are preferred for users with claude.ai subscriptions
+- Claude Code non-interactive mode uses `-p` flag with `--dangerously-skip-permissions` for full automation (safe in sandboxed containers)
+- Model selection aliases: `sonnet` or `haiku` map to full model IDs; UI provides friendly names (Sonnet 4.5 / Haiku 4.5)
